@@ -3,8 +3,6 @@ Basic utilities for decoding Voynich EVA words with a provisional mod‑23 inver
 Edit `glyph_to_num` to match the exact numeric assignments you wish to test.
 """
 
-import math
-
 MOD = 23
 LATIN_23 = "ABCDEFGHIKLMNOPQRSTVXYZ"  # Classical Latin alphabet (J, U, W omitted)
 
