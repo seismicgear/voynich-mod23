@@ -8,7 +8,6 @@ Fill in the paths and tweak N_ITER as desired.
 """
 
 import random, pathlib, re
-from collections import Counter
 import numpy as np
 
 import decoder as dec
