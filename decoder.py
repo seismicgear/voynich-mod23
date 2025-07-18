@@ -16,7 +16,15 @@ glyph_to_num = {
 }
 
 # Pre‑compute modular inverses
-_inv_cache = {n: pow(n, -1, MOD) for n in range(1, MOD + 1)}
+def _safe_mod_inv(n: int, mod: int = MOD) -> int:
+    """Return the modular inverse of ``n`` or ``n`` itself if not invertible."""
+    try:
+        return pow(n, -1, mod)
+    except ValueError:
+        # 23 has no inverse modulo 23; map it to itself so decoding still works
+        return n
+
+_inv_cache = {n: _safe_mod_inv(n, MOD) for n in range(1, MOD + 1)}
 num_to_latin = {i: LATIN_23[i - 1] for i in range(1, MOD + 1)}
 
 # --------------------------------------------------------------------------
