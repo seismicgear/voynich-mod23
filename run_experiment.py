@@ -61,8 +61,8 @@ def main():
             zip(latin_alphabet, random.sample(latin_alphabet, dec.MOD))
         )
 
-       trans_table = str.maketrans(shuffle_map)
-       rand_str = decoded.translate(trans_table)
+        trans_table = str.maketrans(shuffle_map)
+        rand_str = decoded.translate(trans_table)
 
         size_null.append(gzip_size(rand_str))
         sim_null.append(
