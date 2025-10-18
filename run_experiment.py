@@ -30,7 +30,8 @@ def load_eva(path: str):
     return [w for w in raw if re.fullmatch(r"[a-z]+", w)]
 
 def load_latin(path: str):
-    return pathlib.Path(path).read_text().lower()
+    ""Return the Latin reference corpus normalised to uppercase."""
+    return pathlib.Path(path).read_text().upper()
 
 # --------------------------------------------------------------------------
 def main():
@@ -39,7 +40,7 @@ def main():
 
     # ---------- decode Voynich --------------------------------------------
     decoded_words = dec.decode_list(eva_words)
-    decoded = "".join(decoded_words)
+    decoded = "".join(decoded_words).upper()
 
     # gzip size (smaller = more structure)
     size_obs = gzip_size(decoded)
