@@ -9,10 +9,10 @@ This repository contains an experimental framework to test the hypothesis that *
 | File/Dir             | Purpose |
 |----------------------|---------|
 | `decoder.py`         | Maps EVA glyphs → numbers → modular inverses (mod 23) → Latin letters. Core decoding logic.
-| `metrics.py`         | Computes Shannon entropy, n-grams, cosine similarity, and Monte Carlo null distributions.
+| `metrics.py`         | Computes gzip compression size, n-grams, cosine similarity, and Monte Carlo null distributions.
 | `run_experiment.py`  | Loads corpus, applies decoder, prints observed metrics, and runs 10,000× shuffle test.
 | `data/`              | Contains `voynich_eva_takahashi.txt` and a Latin corpus for trigram comparison.
-| `results/`           | (Optional) Save your entropy curves, p-values, and decoded strings here.
+| `results/`           | (Optional) compression stats, p-values, and decoded strings here.
 | `notebooks/`         | For interactive experiments or visualizations (optional).
 | `src/`               | Alternate location for core modules if separating cleanly.
 
@@ -26,29 +26,29 @@ Maps glyphs to numbers (e.g. `'q' → 1`, `'o' → 2`)
 → Map to classical Latin letters (e.g. `1 → A`, `12 → L`)
 
 ### Step 2: **Measure**
-- Shannon entropy of the output string
+- gzip compression size of the decoded string
 - Trigram cosine similarity vs. a 15th-century Latin corpus
 
 ### Step 3: **Monte Carlo Test**
 - Randomly shuffle the Latin letter assignments 10,000×
-- Compute entropy and trigram similarity for each run
+- Compute gzip size and trigram similarity for each run
 - Compare your mapping to the null distribution
 
 ---
 
 ## Evaluation Metrics
 
-| Metric                | Interpretation |
-|------------------------|----------------|
-| **Shannon entropy**    | Lower = more structured; compare against shuffled controls  
-| **Trigram similarity** | Higher = closer to natural language (Latin)  
-| **Monte Carlo p-values** | How unlikely your results are under randomness
+| Metric                   | Interpretation |
+|--------------------------|----------------|
+| **Gzip compression size** | Smaller = more structured; compare against shuffled controls
+| **Trigram similarity**    | Higher = closer to natural language (Latin)
+| **Monte Carlo p-values**  | How unlikely your results are under randomness
 
 ---
 
 ## Success Criteria
 
-- `p_entropy < 0.01` and `p_trigram < 0.01`  
+- `p_gzip < 0.01` and `p_trigram < 0.01`
 - Robust performance across Currier A and B  
 - Predictive consistency on held-out folios
 
