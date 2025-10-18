@@ -30,9 +30,9 @@ def load_eva(path: str):
     return [w for w in raw if re.fullmatch(r"[a-z]+", w)]
 
 def load_latin(path: str):
-    ""Return the Latin reference corpus normalised to uppercase."""
-    return pathlib.Path(path).read_text().upper()
-
+       """Return the Latin reference corpus as an uppercase, letters-only string."""
+       text = pathlib.Path(path).read_text().upper()
+       return re.sub(r"[^A-Z]", "", text)
 # --------------------------------------------------------------------------
 def main():
     eva_words  = load_eva(EVA_PATH)
