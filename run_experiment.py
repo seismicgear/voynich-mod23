@@ -53,20 +53,19 @@ def main():
 
     # ---------- Monte‑Carlo baseline --------------------------------------
     latin_alphabet = list(dec.LATIN_23)
+    inv_words = decoded_words
     size_null, sim_null = [], []
 
     for _ in range(N_ITER):
         shuffle_map = dict(
-            zip(range(1, dec.MOD + 1), random.sample(latin_alphabet, dec.MOD))
+            zip(latin_alphabet, random.sample(latin_alphabet, dec.MOD))
         )
 
-        def shuffle_decode(nums):
-            return "".join(shuffle_map[i] for i in nums)
-
         rand_parts = []
-        for w in eva_words:
-            nums = [dec.glyph_to_num[g] for g in w if g in dec.glyph_to_num]
-            rand_parts.append(shuffle_decode(nums))
+        for inv_word in inv_words:
+            rand_parts.append(
+                "".join(shuffle_map.get(ch, ch) for ch in inv_word)
+            )
         rand_str = "".join(rand_parts)
 
         size_null.append(gzip_size(rand_str))
