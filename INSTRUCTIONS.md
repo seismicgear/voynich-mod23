@@ -47,7 +47,7 @@ This will:
 * Decode all EVA words using the modular‑23 inverse cipher
 * Compute:
 
-  * Shannon entropy (bits/char)
+  * gzip compression size (bytes)
   * Trigram cosine similarity vs Latin
 * Run 10,000 Monte Carlo randomizations
 * Output p-values showing whether your mapping outperforms chance
@@ -59,8 +59,8 @@ This will:
 ```
 Observed entropy: 3.612 bits/char  
 Observed trigram‑cosine similarity vs Latin: 0.2715  
-p‑value (entropy lower):  0.0082  
-p‑value (trigram higher): 0.0034  
+p‑value (gzip smaller)  : 0.0082
+p‑value (cosine higher) : 0.0034  
 ```
 
 ---
