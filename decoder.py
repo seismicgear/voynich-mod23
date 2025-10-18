@@ -29,8 +29,21 @@ num_to_latin = {i: LATIN_23[i - 1] for i in range(1, MOD + 1)}
 
 # --------------------------------------------------------------------------
 def decode_word(eva_word: str) -> str:
-    """Return the mod‑23 inverse decoding of a single EVA token."""
-    nums = [glyph_to_num[g] for g in eva_word if g in glyph_to_num]
+    """Return the mod‑23 inverse decoding of a single EVA token.
+
+    Raises
+    ------
+    ValueError
+        If ``eva_word`` contains a glyph that does not exist in ``glyph_to_num``.
+    """
+    nums = []
+    for idx, glyph in enumerate(eva_word):
+        try:
+            nums.append(glyph_to_num[glyph])
+        except KeyError:
+            raise ValueError(
+                f"Unknown glyph '{glyph}' at position {idx} in EVA word '{eva_word}'"
+            ) from None
     invs = [_inv_cache[n] for n in nums]
     return ''.join(num_to_latin[i] for i in invs)
 
