@@ -38,7 +38,8 @@ def main():
     latin_text = load_latin(LATIN_PATH)
 
     # ---------- decode Voynich --------------------------------------------
-    decoded = "".join(dec.decode_list(eva_words))
+    decoded_words = dec.decode_list(eva_words)
+    decoded = "".join(decoded_words)
 
     # gzip size (smaller = more structure)
     size_obs = gzip_size(decoded)
@@ -53,7 +54,6 @@ def main():
 
     # ---------- Monte‑Carlo baseline --------------------------------------
     latin_alphabet = list(dec.LATIN_23)
-    inv_words = decoded_words
     size_null, sim_null = [], []
 
     for _ in range(N_ITER):
@@ -61,12 +61,8 @@ def main():
             zip(latin_alphabet, random.sample(latin_alphabet, dec.MOD))
         )
 
-        rand_parts = []
-        for inv_word in inv_words:
-            rand_parts.append(
-                "".join(shuffle_map.get(ch, ch) for ch in inv_word)
-            )
-        rand_str = "".join(rand_parts)
+       trans_table = str.maketrans(shuffle_map)
+       rand_str = decoded.translate(trans_table)
 
         size_null.append(gzip_size(rand_str))
         sim_null.append(
