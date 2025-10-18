@@ -8,7 +8,7 @@ This document defines the statistical experiment used to evaluate the modular-23
 
 Voynichese encodes linguistic structure via a monoalphabetic cipher based on modular inversion (mod 23), producing output that exhibits:
 
-- Lower character-level entropy than randomized baselines
+- Smaller gzip compression size than randomized baselines
 - Higher trigram similarity to known 15th-century Latin corpora
 - Consistent behavior across different folio sections (Currier A/B)
 
@@ -32,10 +32,10 @@ Voynichese encodes linguistic structure via a monoalphabetic cipher based on mod
 
 ## 3. Metrics
 
-### 3.1 Shannon Entropy
+### 3.1 Gzip Compression Size
 
-Character-level entropy (bits per character) of the decoded output.
-Lower entropy implies higher structure.
+Byte length of the decoded output after gzip compression.
+Smaller compressed size implies greater regularity/structure.
 
 ### 3.2 Trigram Cosine Similarity
 
@@ -50,7 +50,7 @@ Higher similarity indicates linguistic overlap with Latin morphology.
 
 1. Shuffle the Latin alphabet 10,000 times
 2. Re-decode the EVA corpus using the same glyph-to-number map but random Latin assignments
-3. Record entropy and trigram similarity for each iteration
+3. Record gzip size and trigram similarity for each iteration
 4. Compute p-values by comparing observed metrics to the null distribution
 
 ---
@@ -59,9 +59,9 @@ Higher similarity indicates linguistic overlap with Latin morphology.
 
 | Test                     | Threshold                          |
 |--------------------------|-------------------------------------|
-| Entropy (observed)       | Below 1st percentile of null dist   |
+| Gzip size (observed)     | Below 1st percentile of null dist   |
 | Trigram similarity       | Above 99th percentile of null dist  |
-| Currier A vs B entropy   | Within 1 SD of each other           |
+| Currier A vs B gzip size | Within 1 SD of each other           |
 | Out-of-sample bigram fit | Top 1% predictive log-likelihood    |
 
 ---
@@ -75,7 +75,7 @@ To replicate this experiment:
 3. Run `run_experiment.py`
 4. Compare the observed metrics and null distribution results
 
-All logic for decoding, entropy, similarity, and shuffling is contained in `decoder.py` and `metrics.py`.
+All logic for decoding, compression, similarity, and shuffling is contained in `decoder.py` and `metrics.py`.
 
 ---
 
