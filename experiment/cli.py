@@ -107,8 +107,8 @@ def run_experiment(
     decoded_text = "".join(decoded_words)
 
     if not decoded_text:
-         print("  Error: Decoded text is empty!")
-         return
+        print("  Error: Decoded text is empty!")
+        return
 
     # 4. Measure Observed Metrics
     print("  Calculating observed metrics...")
