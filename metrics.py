@@ -18,3 +18,22 @@ def gzip_size(text: str) -> int:
         with gzip.GzipFile(fileobj=buf, mode="w") as f:
             f.write(text.encode())
         return len(buf.getvalue())
+
+def shannon_entropy(text: str) -> float:
+    """Calculates Shannon Entropy (bits/character)."""
+    if not text:
+        return 0.0
+    counts = Counter(text)
+    length = len(text)
+    probs = [count / length for count in counts.values()]
+    return -sum(p * math.log2(p) for p in probs)
+
+def index_of_coincidence(text: str) -> float:
+    """Calculates Index of Coincidence."""
+    if len(text) < 2:
+        return 0.0
+    counts = Counter(text)
+    N = len(text)
+    numerator = sum(n * (n - 1) for n in counts.values())
+    denominator = N * (N - 1)
+    return numerator / denominator
