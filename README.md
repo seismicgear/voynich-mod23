@@ -1,8 +1,18 @@
 # Modular-23 Decoder for Voynich Manuscript
 
-This repository contains an experimental framework to test the hypothesis that **Voynichese encodes modular structure** through modular arithmetic (mod 23), mapped to a 23-letter Latin alphabet. The goal is to determine whether this decoding method yields statistically meaningful structure or performs no better than random baselines.
+This repository contains an experimental framework to test the hypothesis that
+a modular‑23 inverse cipher applied to Voynich EVA glyphs yields text with
+natural‑language‑like structure (compression, n‑grams) rather than behaving
+like a random labeling.
 
 ---
+
+## Quickstart
+
+```bash
+pip install -r requirements.txt
+python run_experiment.py --eva data/voynich_eva_takahashi.txt --latin data/latin_reference.txt --n-iter 10000
+```
 
 ## Repo Contents
 
@@ -56,6 +66,4 @@ Maps glyphs to numbers (e.g. `'q' → 1`, `'o' → 2`)
 
 ## Setup
 
-```bash
-pip install pandas numpy scipy nltk
-python -m nltk.downloader punkt
+See [INSTRUCTIONS.md](INSTRUCTIONS.md) for a full walkthrough.

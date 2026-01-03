@@ -5,12 +5,9 @@ Edit `glyph_to_num` to match the exact numeric assignments you wish to test.
 
 import re
 
-MOD = 23
-LATIN_23 = "ABCDEFGHIKLMNOPQRSTVXYZ"  # Classical Latin alphabet (J, U, W omitted)
-
 # --- Provisional glyph→number table ---------------------------------------
 # Replace / extend as appropriate for your research.
-glyph_to_num = {
+DEFAULT_GLYPH_TO_NUM = {
     # Multigraphs from Codebook
     'chedy': 3,   # -> H
     'dar': 19,    # -> R
@@ -36,64 +33,61 @@ glyph_to_num = {
     'f': 19, 'x': 20, 'b': 21, 'v': 22, 'z': 23
 }
 
-# Compile a regex for "Longest Match First"
-sorted_tokens = sorted(glyph_to_num.keys(), key=len, reverse=True)
-pattern = re.compile("|".join(map(re.escape, sorted_tokens)))
+# Kept for backward compatibility if needed, but usage is discouraged in favor of Mod23Decoder
+glyph_to_num = DEFAULT_GLYPH_TO_NUM
+LATIN_23 = "ABCDEFGHIKLMNOPQRSTVXYZ"
+MOD = 23
 
-# Pre‑compute modular inverses
-def _safe_mod_inv(n: int, mod: int = MOD) -> int:
-    """Return the modular inverse of ``n`` or ``n`` itself if not invertible."""
-    try:
-        return pow(n, -1, mod)
-    except ValueError:
-        # 23 has no inverse modulo 23; map it to itself (Null behavior handles it later)
-        return n
 
-_inv_cache = {n: _safe_mod_inv(n, MOD) for n in range(1, MOD + 1)}
+class Mod23Decoder:
+    MOD = 23
+    ALPHABET = LATIN_23
 
-# Map 1-22 to Latin letters, 23 to empty string (Null)
-num_to_latin = {i: LATIN_23[i - 1] for i in range(1, MOD)}
-num_to_latin[23] = "" # Option B: Null
+    def __init__(self, glyph_to_num: dict[str, int] = None):
+        self.glyph_to_num = glyph_to_num if glyph_to_num is not None else DEFAULT_GLYPH_TO_NUM
+        # Sort tokens by length (longest match first)
+        self.sorted_tokens = sorted(self.glyph_to_num.keys(), key=len, reverse=True)
 
-# --------------------------------------------------------------------------
+        self._inv_cache = {n: self._safe_mod_inv(n, self.MOD) for n in range(1, self.MOD + 1)}
+        self.num_to_latin = {i: self.ALPHABET[i - 1] for i in range(1, self.MOD)}
+        self.num_to_latin[23] = "" # Null
+
+    def _safe_mod_inv(self, n: int, mod: int) -> int:
+        """Return the modular inverse of ``n`` or ``n`` itself if not invertible."""
+        try:
+            return pow(n, -1, mod)
+        except ValueError:
+            return n
+
+    def tokenize_eva(self, eva_word: str) -> list[str]:
+        """Greedy tokenizer (longest match first)."""
+        tokens = []
+        i = 0
+        while i < len(eva_word):
+            for tok in self.sorted_tokens:
+                if eva_word.startswith(tok, i):
+                    tokens.append(tok)
+                    i += len(tok)
+                    break
+            else:
+                bad = eva_word[i]
+                raise ValueError(
+                    f"Unknown glyph '{bad}' at position {i} in EVA word '{eva_word}'"
+                )
+        return tokens
+
+    def decode_word(self, eva_word: str) -> str:
+        tokens = self.tokenize_eva(eva_word)
+        nums   = [self.glyph_to_num[t] for t in tokens]
+        invs   = [self._inv_cache[n] for n in nums]
+        return "".join(self.num_to_latin[i] for i in invs)
+
+
+# Functional wrappers for backward compatibility with existing code
+_default_decoder = Mod23Decoder()
+
 def decode_word(eva_word: str) -> str:
-    """Tokenizes EVA string and applies modular decoding."""
-    tokens = pattern.findall(eva_word)
-
-    # Check if we consumed the whole string (optional validation)
-    if "".join(tokens) != eva_word:
-        # Handle unmapped garbage or raise error
-        # Identify the first unmapped character for the error message
-        matched = "".join(tokens)
-
-        for char in eva_word:
-             # This is a weak check if we just iterate chars.
-             pass
-
-        # Re-scan to find the gap
-        pos = 0
-        for t in tokens:
-            # Find t starting at or after pos
-            idx = eva_word.find(t, pos)
-            if idx == -1:
-                # Should not happen if findall works
-                raise RuntimeError("Regex logic error")
-            if idx > pos:
-                # There is a gap between pos and idx
-                bad_char = eva_word[pos]
-                raise ValueError(f"Unknown glyph '{bad_char}' at position {pos} in EVA word '{eva_word}'")
-            pos = idx + len(t)
-
-        if pos < len(eva_word):
-             bad_char = eva_word[pos]
-             raise ValueError(f"Unknown glyph '{bad_char}' at position {pos} in EVA word '{eva_word}'")
-
-    nums = [glyph_to_num[t] for t in tokens]
-
-    # Apply your inverse logic
-    invs = [_inv_cache[n] for n in nums]
-    return ''.join(num_to_latin[i] for i in invs)
+    return _default_decoder.decode_word(eva_word)
 
 def decode_list(words):
-    """Vectorised convenience wrapper."""
     return [decode_word(w) for w in words]
