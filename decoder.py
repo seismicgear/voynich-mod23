@@ -65,16 +65,7 @@ def decode_word(eva_word: str) -> str:
         # Handle unmapped garbage or raise error
         # Identify the first unmapped character for the error message
         matched = "".join(tokens)
-        # This check is tricky because tokens might be in different order than source if not contiguous
-        # But findall returns tokens in order of appearance.
-        # So "".join(tokens) should be a subsequence of eva_word.
-        # If not equal, there are gaps.
 
-        # We want to raise ValueError to satisfy the requirement "Handle unmapped garbage or raise error"
-        # and to pass the existing test.
-        # Let's find the first char that is not in the matched tokens?
-        # Actually, let's just find where the mismatch starts.
-        # Or simpler:
         for char in eva_word:
              # This is a weak check if we just iterate chars.
              pass
