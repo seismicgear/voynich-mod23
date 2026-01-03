@@ -17,8 +17,9 @@ def temp_env():
     # Create dummy data
     data_dir = Path("data")
     data_dir.mkdir()
-    (data_dir / "voynich_eva_takahashi.txt").write_text("qokeedy q o")
-    (data_dir / "latin_reference.txt").write_text("ABC DEF GHI")
+    # Create large enough data to pass the new sanity check
+    (data_dir / "voynich_eva_takahashi.txt").write_text("qokeedy " * 1000)
+    (data_dir / "latin_reference.txt").write_text("ABCDEFGHIJ" * 1000)
 
     yield tmp_dir
 
