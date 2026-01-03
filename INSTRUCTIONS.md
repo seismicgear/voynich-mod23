@@ -1,81 +1,86 @@
-# INSTRUCTIONS.md
+# INSTRUCTIONS.md (Version 2.0)
 
-This file explains how to run the modular‑23 decoding experiment from start to finish.
+This guide walks you through setting up and running the Version 2.0 experiment (Positional Decoder + BPE + Solver).
 
 ---
 
-## Step 1: Clone the Repo
+## Step 1: Clone & Install
+
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/yourname/voynich-positional-decoder.git
+    cd voynich-positional-decoder
+    ```
+
+2.  Install dependencies (requires Python 3.8+):
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+---
+
+## Step 2: Setup Data
+
+Run the setup script to download the Voynich "Interlinear" file and the NLTK reference corpora (English Brown, Italian UDHR).
 
 ```bash
-git clone https://github.com/yourname/voynich-mod23.git
-cd voynich-mod23
-````
+python3 setup_v2.py
+```
+
+*   **Creates:** `data/` directory.
+*   **Downloads:** `data/interlinear_full_words.txt`, `data/english_brown.txt`, `data/italian_sample.txt`.
 
 ---
 
-## Step 2: Set Up the Environment
+## Step 3: Learn Vocabulary (Tokenization)
 
-Install dependencies:
+Run the BPE tokenizer to learn the manuscript's vocabulary. This script merges common pairs (like `c`+`h` -> `ch`) to find the best atomic units.
 
 ```bash
-pip install -r requirements.txt
+python3 tokenize_eva.py
 ```
 
----
-
-## Step 3: Prepare the Data
-
-Place these in the `/data/` folder:
-
-* `voynich_eva_takahashi.txt`
-  A plain-text file of EVA transcription (one token per line).
-
-* `latin_reference.txt`
-  A 15th-century Latin corpus (\~100 KB) for trigram comparison.
+*   **Input:** `data/interlinear_full_words.txt` (Language A)
+*   **Output:** `data/vocab_a.txt` (List of learned tokens)
 
 ---
 
-## Step 4: Run the Experiment
+## Step 4: Run the Solver
+
+Run the Simulated Annealing solver to find the optimal positional mapping.
 
 ```bash
-python run_experiment.py
+python3 solver.py
 ```
 
-This will:
+*   **Input:** `data/interlinear_full_words.txt`, `data/english_brown.txt`, `data/vocab_a.txt`
+*   **Process:**
+    1.  Splits data into Train (Even Lines) and Test (Odd Lines).
+    2.  Optimizes a mapping to make the Train set look like English.
+    3.  Runs for ~100,000 iterations (takes 1-5 minutes).
+*   **Output:**
+    *   Prints progress (`Iter 5000: Best Score = 0.45...`).
+    *   **Final Result:** `Training Score` vs `TEST SET Score`.
+    *   Sample decoded text.
 
-* Decode all EVA words using the modular‑23 inverse cipher
-* Compute:
+### Interpreting the Output
 
-  * gzip compression size (bytes)
-  * Trigram cosine similarity vs Latin
-* Run 10,000 Monte Carlo randomizations
-* Output p-values showing whether your mapping outperforms chance
+Look at the **TEST SET Score**:
+
+*   **> 0.65:** Strong Match. The mapping generalizes.
+*   **0.50 - 0.65:** Moderate Match.
+*   **< 0.50:** Weak Match / Failure.
 
 ---
 
-## Sample Output
+## Customization
 
-```
-gzip obs: 123456 (null mean 123980 ± 300)
-trigram cosine obs: 0.27 (null mean 0.11 ± 0.03)
-p‑value (gzip smaller)  : 0.0123
-p‑value (cosine higher) : 0.0034
-```
-
----
-
-## Step 5: Tweak the Mapping (Optional)
-
-Edit `glyph_to_num` in `decoder.py`:
+To test against Italian instead of English, edit `solver.py` (bottom of file):
 
 ```python
-glyph_to_num = {
-    'q': 1, 'o': 2, 'k': 3,  # etc.
-}
+solve(
+    voynich_path="data/interlinear_full_words.txt",
+    reference_path="data/italian_sample.txt",  # <--- Change this
+    vocab_path="data/vocab_a.txt"
+)
 ```
-
----
-
-## Contribute or Replicate
-
-If you rerun the pipeline, feel free to open a pull request or share your output from `/results/` for comparison.

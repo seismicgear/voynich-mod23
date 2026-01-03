@@ -1,64 +1,53 @@
-# EXPERIMENT.md
+# EXPERIMENT.md (Version 2.0)
 
-## Hypothesis
+## Hypothesis: Positional Encoding & Learned Vocabulary
 
-### H₀ (Null Hypothesis): No Special Structure
-1. **Structure:** After modular‑23 inversion, the decoded string has compressibility (gzip size) indistinguishable from a randomly shuffled sequence of the same characters.
-2. **Linguistic Affinity:** The decoded string's trigram profile is no more similar to historical Latin than any random monoalphabetic relabeling of the same text.
-3. **Mapping Specificity:** The decoded text's metrics (gzip, trigrams, entropy) are no better than what would be obtained by a random assignment of numbers (1-23) to EVA glyphs.
-4. **Distribution:** The text's Entropy and Index of Coincidence do not resemble natural language baselines.
+### Core Premise
+Version 2.0 moves beyond simple monoalphabetic substitution (like the V1 Mod-23 hypothesis) to test a more complex encoding scheme. We hypothesize that:
 
-### H₁ (Alternative Hypothesis): Meaningful Signal
-The modular‑23 mapping yields:
-1. **Structure:** Significantly smaller gzip size (higher compressibility) than shuffled controls.
-2. **Linguistic Affinity:** Higher trigram cosine similarity to historical Latin than random monoalphabetic relabelings.
-3. **Mapping Specificity:** Metrics significantly better than those produced by random EVA-to-Number mappings, suggesting the specific mapping is non-trivial.
-4. **Properties:** Entropy and Index of Coincidence comparable to samples of actual Latin text.
+1.  **Positional Dependency:** The meaning or mapping of a Voynich glyph changes based on its position in the line. Specifically, "Line Start" (first word), "Line Body" (middle), and "Line End" (last word) may use different substitution tables or encounter different entropy constraints.
+2.  **Atomic Tokens (BPE):** The standard "EVA" transcription is over-segmented. "Characters" like `c`, `h`, `o` are likely parts of larger composite glyphs (e.g., `cho`, `sh`). We use **Byte Pair Encoding (BPE)** to statistically discover these atomic units rather than guessing them.
+3.  **Linguistic Affinity:** If the manuscript encodes a natural language (e.g., medieval Italian or English), there exists a mapping that produces trigram statistics (sequences of 3 letters) highly correlated with that language.
 
 ---
 
 ## Experimental Design
 
-The experiment applies the modular-23 inverse decoding to the EVA text and compares it against three distinct baselines/null models.
+The experiment uses an **Optimization & Validation** approach rather than simple hypothesis testing.
 
-### 1. Structure Test (Gzip)
-*   **Metric:** Gzip compression size (bytes).
-*   **Null Model:** `Shuffle Text`.
-    *   **Randomize:** The sequence of characters in the decoded text is randomly permuted.
-    *   **Fix:** The set of characters (frequency distribution) remains identical.
-*   **Interpretation:** If the observed text compresses significantly better (smaller size) than the shuffled versions, the text contains non-random sequential structure.
+### 1. Data Preparation
+*   **Source:** `interlinear_full_words.txt` (Chirila et al.), filtered for **Currier Language A**.
+*   **Reconstruction:** We group words by `(Folio, Line)` to reconstruct full lines, preserving the positional structure.
+*   **Tokenization:** We run BPE on the raw EVA text to generate a vocabulary of ~50-100 "tokens" (e.g., `qo`, `daiin`, `ol`, etc.).
 
-### 2. Mapping Specificity & Affinity Tests
-We employ two null models to test the mapping's validity:
+### 2. The Solver (Simulated Annealing)
+We treat decoding as an optimization problem.
+*   **Objective Function:** Maximize the **Cosine Similarity** between the trigram frequency vector of the *decoded text* and the *reference language* (e.g., Brown Corpus for English).
+*   **State Space:** The solver maintains three separate mappings:
+    *   `Map_Start`: Used for the first token of a line.
+    *   `Map_Body`: Used for all middle tokens.
+    *   `Map_End`: Used for the last token.
+*   **Algorithm:** Metropolis-Hastings (Simulated Annealing).
+    *   Propose a swap in one of the mappings.
+    *   Accept if score improves.
+    *   Accept with probability $e^{\Delta / T}$ if score worsens (to escape local optima).
 
-**A. Alphabet Shuffle (Linguistic Affinity)**
-*   **Metric:** Cosine similarity of trigram frequency vectors vs. a Latin reference corpus.
-*   **Null Model:** Random monoalphabetic substitution on the *decoded* text.
-*   **Interpretation:** Does the decoded text have Latin-like trigrams regardless of the specific letter labels? This tests if the underlying structure is compatible with Latin.
+### 3. Validation: Interleaved Train/Test Split
+To ensure we aren't just "hallucinating" a language by overfitting (finding a mapping that forces random noise to look like English), we use a rigorous split:
 
-**B. Glyph Mapping Shuffle (Mapping Validation)**
-*   **Metric:** Gzip, Trigrams, Entropy, IoC.
-*   **Null Model:** `Random Glyph Mapping`.
-    *   **Randomize:** The assignment of numeric values (1..23) to EVA glyphs is randomly shuffled.
-    *   **Fix:** The EVA text and the Mod-23 logic.
-*   **Interpretation:** Is the specific `DEFAULT_GLYPH_TO_NUM` mapping special? If the observed metrics are significantly better than those from random glyph-to-number assignments, it supports the hypothesis that the mapping was not found by chance (or that it was carefully tuned).
+*   **Training Set:** All **EVEN** numbered lines. The solver *only* sees these lines during optimization.
+*   **Test Set:** All **ODD** numbered lines. These are held out completely.
 
-### 3. Natural Language Profile Test (Entropy, IoC, Trigrams)
-*   **Metrics:** Shannon Entropy, Index of Coincidence (IoC), Trigram Cosine Similarity.
-*   **Baseline:** `Latin Windows`.
-    *   **Method:** We sample random contiguous windows from the Latin reference corpus of the same length as the decoded text.
-    *   **Comparison:** We compare the observed metrics against the distribution of these Latin windows.
-*   **Interpretation:** This tells us if the decoded text "looks like" a piece of Latin text of the same length, rather than just "better than random noise."
+### Interpretation
+After the solver converges on the Training Set, we apply the final mappings to the **Test Set**.
 
-### Controls
-*   **Input Data:** Takahashi EVA transcription (cleaned).
-*   **Reference Data:** 15th-century Latin corpus.
-*   **Sanity Checks:** The pipeline enforces minimum data sizes (>1000 EVA words, >10000 Latin chars) to prevent invalid conclusions from stub data.
-*   **Train/Test Split (Optional):** To avoid overfitting the mapping, the experiment can be run on a held-out fraction of the text (`--test-fraction`).
+*   **High Test Score (> 0.65):** Strong evidence. The rules learned on the even lines successfully predict the structure of the odd lines. This suggests a genuine linguistic system.
+*   **Moderate Test Score (0.50 - 0.65):** Partial evidence. Some structure exists, but the mapping might be imperfect or the text may be a "stochastic language" (like a constructed language or chant).
+*   **Low Test Score (< 0.50):** Failure. The solver "memorized" the training data but the pattern didn't hold up on unseen data. This supports the null hypothesis (hoax or meaningless gibberish).
 
-### Statistics
-For each metric, we report:
-*   **Observed Value:** The metric calculated on the actual decoded text.
-*   **Null/Baseline Distribution:** Mean and Standard Deviation of the null model (N iterations).
-*   **Z-score:** Number of standard deviations the observation is from the null mean.
-*   **p-value:** Probability of observing a result at least as extreme as the actual result under the null hypothesis.
+---
+
+## Metrics
+
+*   **Trigram Cosine Similarity:** The primary objective. Measures the angle between the frequency vectors of the decoded text and the reference text. Range: [0, 1].
+*   **Gzip Compression:** Used as a secondary check for structural regularity.

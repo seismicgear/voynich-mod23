@@ -1,6 +1,16 @@
 # CODEBOOK.md
 
-This table encodes a working hypothesis about glyph roles/meanings based on positional and co‑occurrence patterns. These are not claimed translations.
+> **⚠️ NOTE: Version 2.0 Dynamic Mapping**
+>
+> In Version 2.0, mappings are **dynamically generated** by the `solver.py` script using Simulated Annealing. There is no single static "codebook".
+>
+> The table below represents a **legacy hypothesis** from Version 1.0 or a specific output snapshot. To see the current best mapping found by the solver, inspect the console output of `solver.py`.
+
+---
+
+## Legacy / Hypothetical Codebook (V1)
+
+This table encodes a working hypothesis about glyph roles/meanings based on positional and co‑occurrence patterns.
 
 | Glyph     | Latin | Role (Hypothesis)         | Meaning (Hypothesis)      | Evidence |
 |-----------|--------|---------------------------|---------------------------|----------|
