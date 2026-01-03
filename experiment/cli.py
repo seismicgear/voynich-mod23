@@ -346,12 +346,12 @@ def run_experiment(
 
             # Similarity Histogram (Mapping Shuffle)
             plt.figure(figsize=(10, 6))
-            plt.hist(mapping_sim_samples, bins=50, color='gray', alpha=0.7, label='Null (Random Mapping)')
+            plt.hist(glyph_map_sim_samples, bins=50, color='gray', alpha=0.7, label='Null (Random Mapping)')
             plt.axvline(obs_similarity, color='blue', linestyle='dashed', linewidth=2, label=f'Observed ({obs_similarity:.4f})')
             # Add Latin Windows distribution
             plt.hist(latin_window_sims, bins=50, color='green', alpha=0.5, label='Latin Windows')
 
-            plt.title(f"Trigram Cosine Similarity (Mapping Null & Latin Windows)\np_map={mapping_sim_stats['p_value']:.5f}")
+            plt.title(f"Trigram Cosine Similarity (Mapping Null & Latin Windows)\np_map={glyph_map_sim_stats['p_value']:.5f}")
             plt.xlabel("Cosine Similarity")
             plt.ylabel("Frequency")
             plt.legend()
