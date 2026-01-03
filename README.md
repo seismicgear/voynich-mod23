@@ -13,7 +13,7 @@ This project tests whether a specific modular-23 inverse mapping from Voynich EV
 *   **Index of coincidence**
 *   **Trigram distribution similarity to Latin**
 
-against appropriate null models (shuffled text and random monoalphabetic relabelings).
+against appropriate null models (shuffled text and random monoalphabetic relabelings) and natural language baselines (windows of Latin text).
 
 If the modular-23 mapping is meaningful, the decoded text should be more compressible and more trigram-similar to Latin than randomized controls, while maintaining entropy and index of coincidence in the typical range for real language.
 
@@ -29,13 +29,18 @@ graph LR
     B --> C{Metrics}
     C -->|Gzip Size| D[Structure Score]
     C -->|Trigram Cosine| E[Linguistic Affinity]
+    C -->|Entropy/IoC| K[Language Profile]
 
     B -.-> F[Null Models]
     F -->|Shuffle Text| G[Null Distribution: Structure]
-    F -->|Shuffle Alphabet| H[Null Distribution: Affinity]
+    F -->|Shuffle Alphabet| H[Null Distribution: Mapping Specificity]
+
+    L[Latin Corpus] -.-> M[Latin Windows]
+    M --> N[Baseline Distribution: Natural Language]
 
     D & G --> I[P-Value: Structure]
-    E & H --> J[P-Value: Affinity]
+    E & H --> J[P-Value: Mapping Specificity]
+    K & N --> O[Comparison: Language Profile]
 ```
 
 ### 1. Decode
@@ -45,11 +50,13 @@ We map EVA glyphs to integers (1-23), compute their modular inverse ($x^{-1} \pm
 We calculate metrics on the decoded text.
 *   **Gzip Size:** A proxy for Kolmogorov complexity. Lower size = higher predictability/structure.
 *   **Trigram Cosine Similarity:** Measures how "Latin-like" the letter triplets are.
+*   **Entropy & IoC:** Measures of information density and repetition.
 
-### 3. Null Models (Monte Carlo)
-To prove significance, we compare our observed metrics against 10,000 simulations:
+### 3. Null Models & Baselines
+To prove significance, we compare our observed metrics against simulations:
 *   **Text Shuffle:** Randomly scrambles characters. Tests if the *order* of characters matters (Structure).
-*   **Alphabet Permutation:** Randomly swaps which number maps to which letter. Tests if the *specific mapping* matters (Linguistic Affinity).
+*   **Alphabet Permutation:** Randomly swaps which number maps to which letter. Tests if the *specific mapping* matters (Mapping Specificity).
+*   **Latin Windows:** Random samples of real Latin text. Tests if the output *looks like natural language*.
 
 ---
 
@@ -62,21 +69,25 @@ A typical run produces a JSON result and histograms.
   "metrics": {
     "gzip": {
       "observed": 123456,
-      "null_mean": 123980.2,
-      "z_score": -1.69,
-      "p_value_smaller": 0.045
+      "null_text_shuffle": {
+          "p_value_smaller": 0.045
+      }
     },
     "trigram_cosine": {
       "observed": 0.2741,
-      "null_mean": 0.1123,
-      "z_score": 5.22,
-      "p_value_greater": 0.00001
+      "null_mapping_shuffle": {
+          "p_value_greater": 0.00001
+      },
+      "latin_windows": {
+          "mean": 0.35,
+          "p_value_greater": 0.12
+      }
     }
   }
 }
 ```
 
-*In this example, the observed text is significantly more Latin-like (p < 0.0001) than random mappings, providing support for the hypothesis.*
+*In this example, the observed text is significantly more Latin-like (p < 0.0001) than random mappings, but still sits below the average for genuine Latin windows.*
 
 ---
 
@@ -124,6 +135,8 @@ python run_experiment.py --n-iter 10000 --plot
 *   `--n-iter <int>`: Number of Monte Carlo simulations (default: 10,000).
 *   `--seed <int>`: Random seed for reproducibility.
 *   `--no-raw`: Exclude raw null distribution data from the JSON output (saves space).
+*   `--test-fraction <float>`: Fraction of data to use for testing (0.0 = use all). Use this to avoid overfitting if you tuned the mapping on the other half.
+*   `--latin-windows <int>`: Number of Latin text windows to sample for baseline comparison.
 
 ---
 

@@ -38,3 +38,15 @@ def shuffle_alphabet_mapping(text: str, alphabet: str) -> str:
     trans_table = str.maketrans(shuffle_map)
 
     return text.translate(trans_table)
+
+def sample_latin_windows(latin_text: str, length: int, n_samples: int, rng: random.Random) -> list[str]:
+    """
+    Sample random contiguous windows from the Latin corpus to serve as a baseline.
+    This helps answer: "Where does the decoded text sit relative to real Latin segments of the same length?"
+    """
+    if len(latin_text) <= length:
+        return [latin_text]
+
+    max_start = len(latin_text) - length
+    starts = [rng.randint(0, max_start) for _ in range(n_samples)]
+    return [latin_text[s : s + length] for s in starts]
