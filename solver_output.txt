@@ -1,0 +1,6 @@
+--- Solving data/interlinear_full_words.txt against data/english_brown.txt ---
+Loaded 1575 lines for Language A.
+Data Loaded: 788 train lines, 787 test lines.
+Initial Score: 0.00001
+Optimizing...
+  Iter 0: Best Score = 0.00001
