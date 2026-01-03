@@ -19,6 +19,26 @@ Our goal is to learn three separate mapping functions ($f_{start}, f_{body}, f_{
 
 ## Methodology
 
+### Pipeline Diagram
+
+```mermaid
+graph TD
+    A[Start] --> B(setup_v2.py)
+    B -->|Downloads Data| C{Data Ready?}
+    C -->|Yes| D(tokenize_eva.py)
+    D -->|Learns Vocabulary| E[data/vocab_a.txt]
+    E --> F(solver.py)
+    F -->|Optimizes Mappings| G[Results]
+
+    subgraph Solver Process
+    F1[Init Random Mappings] --> F2[Decode Training Set]
+    F2 --> F3[Calc Trigram Score]
+    F3 --> F4{Accept Change?}
+    F4 -->|Yes| F5[Update Best Map]
+    F4 -->|No| F2
+    end
+```
+
 ### 1. Vocabulary Learning (BPE)
 Instead of treating every EVA glyph as atomic, we use a simplified Byte Pair Encoding (BPE) algorithm to learn a vocabulary of common tokens (e.g., merging `c` and `h` into `ch`).
 
@@ -46,5 +66,6 @@ See [INSTRUCTIONS.md](INSTRUCTIONS.md) for a step-by-step guide on setting up an
 **Modular-23 Hypothesis**
 
 Our initial experiment tested a simpler hypothesis: that the text was encoded via a fixed modular-23 inverse mapping ($x^{-1} \pmod{23}$).
-*   **Code:** `run_experiment.py`
+*   **Code:** `legacy/run_experiment_v1.py`
+*   **Notebook:** `legacy/reproduce_results_v1.ipynb`
 *   **Findings:** While statistically distinguishable from random noise, the Mod-23 mapping failed to produce readable text or reach natural language metric thresholds. This code is retained for historical comparison.
