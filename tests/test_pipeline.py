@@ -53,4 +53,4 @@ def test_pipeline_smoke(temp_env):
 
     assert "metrics" in data
     assert "gzip" in data["metrics"]
-    assert len(data["metrics"]["gzip"]["null_samples"]) == 10
+    assert len(data["metrics"]["gzip"]["null_text_samples"]) == 10

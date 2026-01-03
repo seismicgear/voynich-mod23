@@ -5,18 +5,19 @@
 ### H₀ (Null Hypothesis): No Special Structure
 1. **Structure:** After modular‑23 inversion, the decoded string has compressibility (gzip size) indistinguishable from a randomly shuffled sequence of the same characters.
 2. **Linguistic Affinity:** The decoded string's trigram profile is no more similar to historical Latin than any random monoalphabetic relabeling of the same text.
+3. **Distribution:** The text's Entropy and Index of Coincidence are indistinguishable from random noise or do not resemble natural language baselines.
 
 ### H₁ (Alternative Hypothesis): Meaningful Signal
 The modular‑23 mapping yields:
 1. **Structure:** Significantly smaller gzip size (higher compressibility) than shuffled controls, indicating preserved sequential patterns (morphemes, words).
 2. **Linguistic Affinity:** Higher trigram cosine similarity to historical Latin than random monoalphabetic relabelings, indicating that the specific Mod-23 mapping captures Latin-like n-gram frequencies better than chance.
-3. **Properties:** Comparable Entropy and Index of Coincidence to natural language texts.
+3. **Properties:** Entropy and Index of Coincidence comparable to samples of actual Latin text (not just random strings).
 
 ---
 
 ## Experimental Design
 
-The experiment applies the modular-23 inverse decoding to the EVA text and compares it against two distinct null models.
+The experiment applies the modular-23 inverse decoding to the EVA text and compares it against three distinct baselines/null models.
 
 ### 1. Structure Test (Gzip)
 *   **Metric:** Gzip compression size (bytes).
@@ -25,12 +26,19 @@ The experiment applies the modular-23 inverse decoding to the EVA text and compa
     *   **Fix:** The set of characters (frequency distribution) remains identical.
 *   **Interpretation:** If the observed text compresses significantly better (smaller size) than the shuffled versions, the text contains non-random sequential structure (e.g., repeated words, prefixes, suffixes).
 
-### 2. Latin-likeness Test (Trigrams)
+### 2. Mapping Specificity Test (Trigrams & Gzip)
 *   **Metric:** Cosine similarity of trigram frequency vectors vs. a Latin reference corpus.
-*   **Null Model:** `Shuffle Alphabet`.
+*   **Null Model:** `Shuffle Alphabet` (Mapping Permutation).
     *   **Randomize:** The mapping between Voynich glyphs and Latin letters is randomly permuted (monoalphabetic substitution).
     *   **Fix:** The underlying structure of the Voynich text (repetition patterns) is preserved; only the "labels" change.
-*   **Interpretation:** If the observed mapping yields higher similarity to Latin than random mappings, it suggests the specific Mod-23 choice aligns Voynich patterns with Latin patterns better than arbitrary assignment.
+*   **Interpretation:** If the observed mapping yields higher similarity to Latin than random mappings, it suggests the specific Mod-23 choice aligns Voynich patterns with Latin patterns better than arbitrary assignment. We also check if the specific mapping yields better compression than random mappings.
+
+### 3. Natural Language Profile Test (Entropy, IoC, Trigrams)
+*   **Metrics:** Shannon Entropy, Index of Coincidence (IoC), Trigram Cosine Similarity.
+*   **Baseline:** `Latin Windows`.
+    *   **Method:** We sample random contiguous windows from the Latin reference corpus of the same length as the decoded text.
+    *   **Comparison:** We compare the observed metrics against the distribution of these Latin windows.
+*   **Interpretation:** This tells us if the decoded text "looks like" a piece of Latin text of the same length, rather than just "better than random noise."
 
 ### Controls
 *   **Input Data:** Takahashi EVA transcription (cleaned).
@@ -39,10 +47,11 @@ The experiment applies the modular-23 inverse decoding to the EVA text and compa
     *   EVA tokenization (greedy longest-match).
     *   `glyph_to_num` mapping (presumed input values).
     *   Mod-23 inversion logic.
+*   **Train/Test Split (Optional):** To avoid overfitting the mapping, the experiment can be run on a held-out fraction of the text (`--test-fraction`).
 
 ### Statistics
 For each metric, we report:
 *   **Observed Value:** The metric calculated on the actual decoded text.
-*   **Null Distribution:** Mean and Standard Deviation of the null model (N iterations).
+*   **Null/Baseline Distribution:** Mean and Standard Deviation of the null model (N iterations).
 *   **Z-score:** Number of standard deviations the observation is from the null mean.
 *   **p-value:** Probability of observing a result at least as extreme as the actual result under the null hypothesis.
