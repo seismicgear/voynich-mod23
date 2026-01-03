@@ -1,87 +1,48 @@
 # EXPERIMENT.md
 
-This document defines the statistical experiment used to evaluate the modular-23 cipher hypothesis for the Voynich Manuscript.
+## Hypothesis
+
+### H₀ (Null Hypothesis): No Special Structure
+1. **Structure:** After modular‑23 inversion, the decoded string has compressibility (gzip size) indistinguishable from a randomly shuffled sequence of the same characters.
+2. **Linguistic Affinity:** The decoded string's trigram profile is no more similar to historical Latin than any random monoalphabetic relabeling of the same text.
+
+### H₁ (Alternative Hypothesis): Meaningful Signal
+The modular‑23 mapping yields:
+1. **Structure:** Significantly smaller gzip size (higher compressibility) than shuffled controls, indicating preserved sequential patterns (morphemes, words).
+2. **Linguistic Affinity:** Higher trigram cosine similarity to historical Latin than random monoalphabetic relabelings, indicating that the specific Mod-23 mapping captures Latin-like n-gram frequencies better than chance.
+3. **Properties:** Comparable Entropy and Index of Coincidence to natural language texts.
 
 ---
 
-## 1. Hypothesis
+## Experimental Design
 
-Voynichese encodes linguistic structure via a monoalphabetic cipher based on modular inversion (mod 23), producing output that exhibits:
+The experiment applies the modular-23 inverse decoding to the EVA text and compares it against two distinct null models.
 
-- Smaller gzip compression size than randomized baselines
-- Higher trigram similarity to known 15th-century Latin corpora
-- Consistent behavior across different folio sections (Currier A/B)
+### 1. Structure Test (Gzip)
+*   **Metric:** Gzip compression size (bytes).
+*   **Null Model:** `Shuffle Text`.
+    *   **Randomize:** The sequence of characters in the decoded text is randomly permuted.
+    *   **Fix:** The set of characters (frequency distribution) remains identical.
+*   **Interpretation:** If the observed text compresses significantly better (smaller size) than the shuffled versions, the text contains non-random sequential structure (e.g., repeated words, prefixes, suffixes).
 
----
+### 2. Latin-likeness Test (Trigrams)
+*   **Metric:** Cosine similarity of trigram frequency vectors vs. a Latin reference corpus.
+*   **Null Model:** `Shuffle Alphabet`.
+    *   **Randomize:** The mapping between Voynich glyphs and Latin letters is randomly permuted (monoalphabetic substitution).
+    *   **Fix:** The underlying structure of the Voynich text (repetition patterns) is preserved; only the "labels" change.
+*   **Interpretation:** If the observed mapping yields higher similarity to Latin than random mappings, it suggests the specific Mod-23 choice aligns Voynich patterns with Latin patterns better than arbitrary assignment.
 
-## 2. Method
+### Controls
+*   **Input Data:** Takahashi EVA transcription (cleaned).
+*   **Reference Data:** 15th-century Latin corpus.
+*   **Fixed Parameters:**
+    *   EVA tokenization (greedy longest-match).
+    *   `glyph_to_num` mapping (presumed input values).
+    *   Mod-23 inversion logic.
 
-### 2.1 Decoder Construction
-
-1. Map each EVA glyph to a unique number (1–23).
-2. Apply modular inverse (mod 23) to each number.
-3. Map the result to a letter in a 23-character Latin alphabet (A–Z, excluding J, U, W).
-4. Join the resulting characters to form Latin-style output strings.
-
-### 2.2 Corpus
-
-- **Input**: `voynich_eva_takahashi.txt` (one word per line, labeled by folio and Currier classification if possible)
-- **Reference**: `latin_reference.txt` (15th-century medical or botanical Latin text, lowercased)
-
----
-
-## 3. Metrics
-
-### 3.1 Gzip Compression Size
-
-Byte length of the decoded output after gzip compression.
-Smaller compressed size implies greater regularity/structure.
-
-### 3.2 Trigram Cosine Similarity
-
-- Extract character trigrams from the decoded Voynich output
-- Compare against trigrams from the Latin reference using cosine similarity
-
-Higher similarity indicates linguistic overlap with Latin morphology.
-
----
-
-## 4. Monte Carlo Control
-
-1. Shuffle the Latin alphabet 10,000 times
-2. Re-decode the EVA corpus using the same glyph-to-number map but random Latin assignments
-3. Record gzip size and trigram similarity for each iteration
-4. Compute p-values by comparing observed metrics to the null distribution
-
----
-
-## 5. Evaluation Criteria
-
-| Test                     | Threshold                          |
-|--------------------------|-------------------------------------|
-| Gzip size (observed)     | Below 1st percentile of null dist   |
-| Trigram similarity       | Above 99th percentile of null dist  |
-| Currier A vs B gzip size | Within 1 SD of each other           |
-| Out-of-sample bigram fit | Top 1% predictive log-likelihood    |
-
----
-
-## 6. Reproducibility
-
-To replicate this experiment:
-
-1. Clone the repo
-2. Place the EVA and Latin corpora in `/data/`
-3. Run `run_experiment.py`
-4. Compare the observed metrics and null distribution results
-
-All logic for decoding, compression, similarity, and shuffling is contained in `decoder.py` and `metrics.py`.
-
----
-
-## 7. Notes
-
-- This framework does not assert final translation of Voynichese
-- The goal is to falsify or validate the **existence of modular structure**
-- Statistical outperformance does not imply semantic meaning
-
+### Statistics
+For each metric, we report:
+*   **Observed Value:** The metric calculated on the actual decoded text.
+*   **Null Distribution:** Mean and Standard Deviation of the null model (N iterations).
+*   **Z-score:** Number of standard deviations the observation is from the null mean.
+*   **p-value:** Probability of observing a result at least as extreme as the actual result under the null hypothesis.

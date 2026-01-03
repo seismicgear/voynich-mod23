@@ -18,8 +18,7 @@ cd voynich-mod23
 Install dependencies:
 
 ```bash
-pip install pandas numpy scipy nltk
-python -m nltk.downloader punkt
+pip install -r requirements.txt
 ```
 
 ---
@@ -57,10 +56,10 @@ This will:
 ## Sample Output
 
 ```
-Observed entropy: 3.612 bits/char  
-Observed trigram‑cosine similarity vs Latin: 0.2715  
-p‑value (gzip smaller)  : 0.0082
-p‑value (cosine higher) : 0.0034  
+gzip obs: 123456 (null mean 123980 ± 300)
+trigram cosine obs: 0.27 (null mean 0.11 ± 0.03)
+p‑value (gzip smaller)  : 0.0123
+p‑value (cosine higher) : 0.0034
 ```
 
 ---
@@ -71,7 +70,7 @@ Edit `glyph_to_num` in `decoder.py`:
 
 ```python
 glyph_to_num = {
-    'q': 1, 'o': 2, 'k': 3, ...
+    'q': 1, 'o': 2, 'k': 3,  # etc.
 }
 ```
 
@@ -80,5 +79,3 @@ glyph_to_num = {
 ## Contribute or Replicate
 
 If you rerun the pipeline, feel free to open a pull request or share your output from `/results/` for comparison.
-
-```
