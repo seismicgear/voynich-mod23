@@ -1,21 +1,12 @@
-# INSTRUCTIONS.md
+# INSTRUCTIONS.md (Version 2.0)
 
-This file explains how to run the modular‑23 decoding experiment from start to finish.
-
----
-
-## Step 1: Clone the Repo
-
-```bash
-git clone https://github.com/yourname/voynich-mod23.git
-cd voynich-mod23
-````
+This guide explains how to run the Version 2.0 Positional Decoder pipeline.
 
 ---
 
-## Step 2: Set Up the Environment
+## 1. Setup Environment
 
-Install dependencies:
+Clone the repository and install dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -23,59 +14,57 @@ pip install -r requirements.txt
 
 ---
 
-## Step 3: Prepare the Data
+## 2. The Pipeline
 
-Place these in the `/data/` folder:
+The V2 experiment consists of three sequential scripts. You must run them in order.
 
-* `voynich_eva_takahashi.txt`
-  A plain-text file of EVA transcription (one token per line).
-
-* `latin_reference.txt`
-  A 15th-century Latin corpus (\~100 KB) for trigram comparison.
-
----
-
-## Step 4: Run the Experiment
+### Step A: Download Data (`setup_v2.py`)
+Fetches the Voynich interlinear transcription and NLTK reference corpora (Brown/English, UDHR/Italian).
 
 ```bash
-python run_experiment.py
+python setup_v2.py
 ```
+*   **Output:** Creates `data/interlinear_full_words.txt`, `data/english_brown.txt`, etc.
 
-This will:
+### Step B: Learn Vocabulary (`tokenize_eva.py`)
+Analyzes the Voynich text to learn "words" (tokens) using a simplified BPE algorithm. This handles composite glyphs like `ch`, `sh`, `qo` automatically.
 
-* Decode all EVA words using the modular‑23 inverse cipher
-* Compute:
+```bash
+python tokenize_eva.py
+```
+*   **Output:** Creates `data/vocab_a.txt` (List of most common tokens).
 
-  * gzip compression size (bytes)
-  * Trigram cosine similarity vs Latin
-* Run 10,000 Monte Carlo randomizations
-* Output p-values showing whether your mapping outperforms chance
+### Step C: Run the Solver (`solver.py`)
+Runs the Simulated Annealing optimization to find the best mapping.
+
+```bash
+python solver.py
+```
+*   **Input:** Uses the data and vocabulary from previous steps.
+*   **Process:** Trains on even lines, validates on odd lines.
+*   **Duration:** ~1-5 minutes depending on iterations.
 
 ---
 
-## Sample Output
+## 3. Interpreting Results
+
+The solver outputs two critical metrics at the end:
 
 ```
-gzip obs: 123456 (null mean 123980 ± 300)
-trigram cosine obs: 0.27 (null mean 0.11 ± 0.03)
-p‑value (gzip smaller)  : 0.0123
-p‑value (cosine higher) : 0.0034
+Training Score (Best): 0.71234
+TEST SET Score:        0.64501
 ```
+
+1.  **Training Score:** How much the decoded text looks like the target language (Max = 1.0).
+2.  **TEST SET Score:** The *real* validation.
+
+| Test Score | Interpretation |
+|------------|----------------|
+| **> 0.65** | **Strong Match.** The mapping works on unseen text. High probability of linguistic structure. |
+| **0.50 - 0.65** | **Moderate.** Some patterns match, but noise is high. |
+| **< 0.50** | **Failure / Overfitting.** The solver just memorized the training data or the target language is wrong. |
 
 ---
 
-## Step 5: Tweak the Mapping (Optional)
-
-Edit `glyph_to_num` in `decoder.py`:
-
-```python
-glyph_to_num = {
-    'q': 1, 'o': 2, 'k': 3,  # etc.
-}
-```
-
----
-
-## Contribute or Replicate
-
-If you rerun the pipeline, feel free to open a pull request or share your output from `/results/` for comparison.
+## Legacy (Version 1.0)
+For the old Mod-23 experiment, see `run_experiment.py`. Note that it is now deprecated.
