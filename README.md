@@ -1,162 +1,73 @@
-# Modular-23 Decoder for Voynich Manuscript
+# Voynich Manuscript Decoder v2.0
 
-This repository contains an experimental framework to test the hypothesis that the Voynich Manuscript's text, specifically the "EVA" transcription, is not a random construction but rather a meaningful text encoded via a **modular-23 inverse mapping**.
-
----
-
-## Hypothesis
-
-This project tests whether a specific modular-23 inverse mapping from Voynich EVA glyph sequences into a 23-letter Latin alphabet produces output with measurable natural-language structure. After decoding, we compare:
-
-*   **Compression** (gzip size)
-*   **Character-level Shannon entropy**
-*   **Index of coincidence**
-*   **Trigram distribution similarity to Latin**
-
-We test these metrics against three rigorous null models:
-1.  **Structure Null:** Random character shuffles (tests for sequential order).
-2.  **Linguistic Affinity Null:** Random alphabet substitutions (tests if the specific letters matter).
-3.  **Mapping Specificity Null:** Random glyph-to-number mappings (tests if the chosen mapping is special).
-
-We also compare the results against a **baseline distribution of real Latin text windows** to see if the decoded text falls within the "natural language" range.
+This repository contains an advanced computational framework for decoding the Voynich Manuscript. It implements a **Positional Decoder** optimized via **Simulated Annealing (MCMC)** to test the hypothesis that the text is a state-dependent polyalphabetic cipher.
 
 ---
 
-## The Pipeline
+## Hypothesis: State-Dependent Polyalphabetic Cipher
 
-The experiment flows through three stages: **Decode**, **Measure**, and **Verify**.
+We hypothesize that the "EVA" transcription of the Voynich Manuscript is not a simple monoalphabetic substitution, but a polyalphabetic system where the mapping changes based on the glyph's position within a line.
+
+Specifically, we model the line as having three distinct states:
+1.  **Start:** The first token of the line.
+2.  **Body:** The middle tokens.
+3.  **End:** The last token of the line.
+
+Our goal is to learn three separate mapping functions ($f_{start}, f_{body}, f_{end}$) that maximize the linguistic similarity of the decoded text to a target language (e.g., 15th-century Latin, Italian, or English).
+
+---
+
+## Methodology
+
+The pipeline uses an iterative optimization process to learn the decoding mappings.
 
 ```mermaid
-graph LR
-    A[EVA Text] -->|Mod-23 Decoder| B(Decoded Text)
-    B --> C{Metrics}
-    C -->|Gzip Size| D[Structure Score]
-    C -->|Trigram Cosine| E[Linguistic Affinity]
-    C -->|Entropy/IoC| K[Language Profile]
+graph TD
+    A[Voynich EVA Text] -->|BPE Tokenizer| B(Vocabulary)
+    A -->|Split| C{Interleaved Split}
+    C -->|Even Lines| D[Training Set]
+    C -->|Odd Lines| E[Testing Set]
 
-    B -.-> F[Null Models]
-    F -->|Shuffle Text| G[Null: Structure]
-    F -->|Shuffle Alphabet| H[Null: Affinity]
+    subgraph Solver [Simulated Annealing]
+        D --> F[Positional Decoder]
+        F -->|Map: Start/Body/End| G(Decoded Text)
+        G --> H{Trigram Scorer}
+        H -.->|Compare| I[Target Language Profile]
+        H -->|Update Score| J[Optimizer]
+        J -->|Propose New Maps| F
+    end
 
-    A -.-> P[Random Glyph Map]
-    P -->|Decode| Q[Null: Mapping Specificity]
-    Q --> R[Distributions for all metrics]
-
-    L[Latin Corpus] -.-> M[Latin Windows]
-    M --> N[Baseline: Natural Language]
-
-    D & G --> I[P-Value: Structure]
-    E & H --> J[P-Value: Affinity]
-    K & N --> O[Comparison: Language Profile]
-    C & R --> S[P-Value: Mapping]
+    J -->|Best Maps Found| K[Final Validation]
+    E --> K
+    K --> L[Test Score]
 ```
 
-### 1. Decode
-We map EVA glyphs to integers (1-23), compute their modular inverse ($x^{-1} \pmod{23}$), and map the result to a 23-letter Latin alphabet (`A`..`Z` excluding `J`, `K`, `U`).
+### 1. Vocabulary Learning (BPE)
+Instead of treating every EVA glyph as atomic, we use a simplified Byte Pair Encoding (BPE) algorithm to learn a vocabulary of common tokens (e.g., merging `c` and `h` into `ch`).
 
-### 2. Measure
-We calculate metrics on the decoded text.
-*   **Gzip Size:** A proxy for Kolmogorov complexity. Lower size = higher predictability/structure.
-*   **Trigram Cosine Similarity:** Measures how "Latin-like" the letter triplets are.
-*   **Entropy & IoC:** Measures of information density and repetition.
+### 2. Metric: Trigram Cosine Similarity
+We evaluate the quality of a candidate decryption by comparing its **trigram frequency vector** to that of a reference corpus (e.g., the Brown Corpus or UDHR). A higher cosine similarity indicates a more natural-looking text structure.
 
-### 3. Null Models & Baselines
-To prove significance, we compare our observed metrics against simulations:
-*   **Text Shuffle:** Randomly scrambles characters. Tests if the *order* of characters matters.
-*   **Alphabet Permutation:** Randomly swaps which number maps to which letter on the decoded text. Tests if the *specific letters* matter.
-*   **Glyph Mapping Shuffle:** Randomly assigns numbers (1-23) to EVA glyphs. Tests if the *specific EVA-to-Number mapping* is statistically significant compared to random mappings.
-*   **Latin Windows:** Random samples of real Latin text of the same length. Tests if the output *looks like natural language* (e.g. is the entropy similar to real Latin?).
+### 3. Optimization: Simulated Annealing
+Because the search space for three simultaneous 26-letter permutations is incredibly vast ($26!^3$), we use Markov Chain Monte Carlo (MCMC) methods—specifically Simulated Annealing—to find an optimal configuration.
 
----
-
-## Sample Output
-
-A typical run produces a JSON result and histograms.
-
-```json
-{
-  "metrics": {
-    "gzip": {
-      "observed": 123456,
-      "null_text_shuffle": {
-          "p_value_smaller": 0.045
-      },
-      "null_glyph_mapping": {
-          "p_value_smaller": 0.012
-      }
-    },
-    "trigram_cosine": {
-      "observed": 0.2741,
-      "null_alphabet_shuffle": {
-          "p_value_greater": 0.00001
-      },
-      "null_glyph_mapping": {
-          "p_value_greater": 0.003
-      },
-      "latin_windows": {
-          "mean": 0.35,
-          "p_value_greater": 0.12
-      }
-    },
-    "entropy": {
-      "observed": 4.12,
-      "latin_windows": {
-        "mean": 4.05,
-        "std": 0.05
-      }
-    }
-  }
-}
-```
-
----
-
-## Limitations & Known Caveats
-
-While the results are intriguing, the following constraints must be acknowledged:
-
-### Single transcription source
-All experiments use the Takahashi EVA transcription as a fixed input. Different diplomatic transcriptions exist; any systematic differences in glyph segmentation or line handling will propagate into the statistics.
-
-### EVA treats spaces as word boundaries
-The pipeline inherits the assumption that spaces in the transcription correspond to meaningful “word” breaks. The underlying manuscript may encode line/paragraph structure differently than normal language.
-
-### Tokenization treats EVA glyph groups as atomic symbols
-Multi-character EVA sequences like `ch`, `sh`, `qo`, etc., are treated as single glyphs according to the standard EVA convention. Alternative segmentations are not explored here.
-
-### Allographic variation is collapsed
-Scribal variants and subtle shape differences that may be meaningful in the manuscript are already normalized away in EVA, and thus invisible to this analysis.
-
-### Uncertain/rare glyphs
-Extremely rare or ambiguous glyphs are either mapped into a catch-all category or filtered out. This can slightly bias frequency-based measures.
+### 4. Validation: Interleaved Split
+To prevent overfitting (where the solver just memorizes the specific letters that make *this* text look like English), we split the manuscript lines into **Training (Even Lines)** and **Testing (Odd Lines)** sets.
+*   **Train:** The solver sees these lines and optimizes the mapping to maximize their score.
+*   **Test:** The final mapping is applied to these held-out lines. A high score here indicates the pattern is generalizable.
 
 ---
 
 ## Usage
 
-### Installation
-```bash
-pip install -r requirements.txt
-```
-
-### Running the Experiment
-You must provide real EVA and Latin text files. The repository comes with stub files that are too small for valid statistics.
-
-```bash
-python run_experiment.py --eva path/to/eva.txt --latin path/to/latin.txt --n-iter 10000 --plot
-```
-
-### Options
-*   `--eva <path>`: Path to EVA transcription file.
-*   `--latin <path>`: Path to Latin reference corpus.
-*   `--n-iter <int>`: Number of Monte Carlo simulations (default: 10,000).
-*   `--seed <int>`: Random seed for reproducibility.
-*   `--no-raw`: Exclude raw null distribution data from the JSON output (saves space).
-*   `--test-fraction <float>`: Fraction of data to use for testing (0.0 = use all). Use this to avoid overfitting if you tuned the mapping on the other half.
-*   `--latin-windows <int>`: Number of Latin text windows to sample for baseline comparison (default: 500).
+See [INSTRUCTIONS.md](INSTRUCTIONS.md) for a step-by-step guide on setting up and running the experiment.
 
 ---
 
-## Reproduction
+## Legacy Experiments (v1.0)
 
-Results are saved to `results/`. You can analyze them using the provided notebook or script, or simply diff the JSON files to track how changes in the decoder affect the statistical significance of the translation.
+**Modular-23 Hypothesis**
+
+Our initial experiment tested a simpler hypothesis: that the text was encoded via a fixed modular-23 inverse mapping ($x^{-1} \pmod{23}$).
+*   **Code:** `run_experiment.py`
+*   **Findings:** While statistically distinguishable from random noise, the Mod-23 mapping failed to produce readable text or reach natural language metric thresholds. This code is retained for historical comparison.
