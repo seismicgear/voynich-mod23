@@ -27,11 +27,19 @@ The experiment applies the modular-23 inverse decoding to the EVA text and compa
 *   **Interpretation:** If the observed text compresses significantly better (smaller size) than the shuffled versions, the text contains non-random sequential structure (e.g., repeated words, prefixes, suffixes).
 
 ### 2. Mapping Specificity Test (Trigrams & Gzip)
+We employ two null models to test the mapping's validity:
+
+**A. Alphabet Shuffle (Linguistic Affinity)**
 *   **Metric:** Cosine similarity of trigram frequency vectors vs. a Latin reference corpus.
-*   **Null Model:** `Shuffle Alphabet` (Mapping Permutation).
-    *   **Randomize:** The mapping between Voynich glyphs and Latin letters is randomly permuted (monoalphabetic substitution).
-    *   **Fix:** The underlying structure of the Voynich text (repetition patterns) is preserved; only the "labels" change.
-*   **Interpretation:** If the observed mapping yields higher similarity to Latin than random mappings, it suggests the specific Mod-23 choice aligns Voynich patterns with Latin patterns better than arbitrary assignment. We also check if the specific mapping yields better compression than random mappings.
+*   **Null Model:** Random monoalphabetic substitution on the *decoded* text.
+*   **Interpretation:** Does the decoded text have Latin-like trigrams regardless of the specific letter labels? This tests if the underlying structure is compatible with Latin.
+
+**B. Glyph Mapping Shuffle (Mapping Validation)**
+*   **Metric:** Gzip, Trigrams, Entropy, IoC.
+*   **Null Model:** `Random Glyph Mapping`.
+    *   **Randomize:** The assignment of numeric values (1..23) to EVA glyphs is randomly shuffled.
+    *   **Fix:** The EVA text and the Mod-23 logic.
+*   **Interpretation:** Is the specific `DEFAULT_GLYPH_TO_NUM` mapping special? If the observed metrics are significantly better than those from random glyph-to-number assignments, it supports the hypothesis that the mapping was not found by chance (or that it was carefully tuned).
 
 ### 3. Natural Language Profile Test (Entropy, IoC, Trigrams)
 *   **Metrics:** Shannon Entropy, Index of Coincidence (IoC), Trigram Cosine Similarity.

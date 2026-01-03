@@ -81,9 +81,10 @@ def run_experiment(
 
         # Step 0: Sanity Checks (Enforce "realish" data)
         if len(eva_words) < 1000 or len(latin_text) < 10000:
-            print("  WARNING: Data looks tiny (EVA < 1000 or Latin < 10000).")
-            print("           You are likely using stub files. Results will be meaningless.")
-            # We don't raise RuntimeError to allow testing the pipeline, but we warn loudly.
+            raise RuntimeError(
+                f"Data looks tiny (EVA={len(eva_words)}, Latin={len(latin_text)}). "
+                "You are probably using the stub files; drop in real corpora as described in data/README.md."
+            )
     except FileNotFoundError as e:
         print(f"Error: {e}")
         return
@@ -128,7 +129,7 @@ def run_experiment(
     latin_gzip = met.gzip_size(latin_text)
     latin_entropy = met.shannon_entropy(latin_text)
     latin_ioc = met.index_of_coincidence(latin_text)
-    # Note: Trigram similarity of Latin to itself is 1.0 (if using same corpus) or close to 1.0 (if split)
+    latin_tri = met.ngram_counter(latin_text, 3) # Stored for completeness/logging
 
     # 5. Latin Window Comparison (Step 2 & 3)
     print(f"  Sampling {n_latin_windows} Latin windows for baseline comparison...")
@@ -157,13 +158,22 @@ def run_experiment(
 
     null_gzip_samples = [] # Structure Null (Shuffle Text)
 
-    # Mapping Null (Shuffle Alphabet) - Step 4
-    # We compute Gzip and Trigram for random mappings.
-    # Entropy/IoC are invariant under substitution, so no need to simulate for them.
-    mapping_gzip_samples = []
-    mapping_sim_samples = []
+    # Mapping Nulls:
+    # 1. Alphabet Shuffle (Random substitution on decoded text)
+    #    - Measures: "Is the structure Latin-like regardless of specific labels?" (for Trigram)
+    # 2. Glyph Mapping Shuffle (Random EVA->Num mapping)
+    #    - Measures: "Is this specific mapping special compared to other valid mappings?"
 
-    # Pre-calculate alphabet for shuffling
+    alphabet_shuffle_sim_samples = []
+
+    # New Mapping-Level Null (Step 4)
+    # We compute Gzip, Trigram, Entropy, IoC for random glyph mappings.
+    glyph_map_gzip_samples = []
+    glyph_map_sim_samples = []
+    glyph_map_entropy_samples = []
+    glyph_map_ioc_samples = []
+
+    # Pre-calculate alphabet for shuffling (for the alphabet shuffle null)
     alphabet = decoder.ALPHABET
 
     start_time = time.time()
@@ -177,17 +187,27 @@ def run_experiment(
         shuffled_text = nulls.shuffle_text(decoded_text)
         null_gzip_samples.append(met.gzip_size(shuffled_text))
 
-        # Null Model 2: Alphabet Shuffle (Mapping/Linguistic Affinity)
-        # Test: Is the text closer to Latin (higher similarity) than a random substitution?
-        # Also: Is the text more structured (lower gzip) than a random substitution?
+        # Null Model 2: Alphabet Shuffle (Legacy Trigram Null)
+        # Random substitution on the ALREADY decoded text.
+        # This keeps the "shape" of the words but changes letters.
         permuted_text = nulls.shuffle_alphabet_mapping(decoded_text, alphabet)
-
-        # Trigram Cosine
         perm_tri_counts = met.ngram_counter(permuted_text, 3)
-        mapping_sim_samples.append(met.cosine_similarity(perm_tri_counts, ref_tri_counts))
+        alphabet_shuffle_sim_samples.append(met.cosine_similarity(perm_tri_counts, ref_tri_counts))
 
-        # Gzip on permuted text (Mapping specificity for structure)
-        mapping_gzip_samples.append(met.gzip_size(permuted_text))
+        # Null Model 3: Glyph Mapping Shuffle (True Mapping Null)
+        # Generate a random EVA->Num mapping, decode, and measure.
+        random_map = nulls.random_glyph_mapping(decoder.DEFAULT_GLYPH_TO_NUM)
+        random_decoder = dec.Mod23Decoder(glyph_to_num=random_map)
+
+        rand_decoded_words = [random_decoder.decode_word(w) for w in eva_words]
+        rand_decoded_text = "".join(rand_decoded_words)
+
+        glyph_map_gzip_samples.append(met.gzip_size(rand_decoded_text))
+        glyph_map_entropy_samples.append(met.shannon_entropy(rand_decoded_text))
+        glyph_map_ioc_samples.append(met.index_of_coincidence(rand_decoded_text))
+
+        rand_tri_counts = met.ngram_counter(rand_decoded_text, 3)
+        glyph_map_sim_samples.append(met.cosine_similarity(rand_tri_counts, ref_tri_counts))
 
     elapsed = time.time() - start_time
     print(f"  Simulation finished in {elapsed:.2f}s.")
@@ -196,10 +216,14 @@ def run_experiment(
     # Structure test (Text Shuffle)
     gzip_stats = st.calculate_stats(obs_gzip, null_gzip_samples, smaller_is_better=True)
 
-    # Mapping test (Alphabet Shuffle)
-    # "Is our mapping better than random mappings?"
-    mapping_sim_stats = st.calculate_stats(obs_similarity, mapping_sim_samples, smaller_is_better=False)
-    mapping_gzip_stats = st.calculate_stats(obs_gzip, mapping_gzip_samples, smaller_is_better=True)
+    # Mapping test (Alphabet Shuffle - Legacy/Basic)
+    alphabet_shuffle_stats = st.calculate_stats(obs_similarity, alphabet_shuffle_sim_samples, smaller_is_better=False)
+
+    # Mapping test (Glyph Mapping Shuffle - Advanced)
+    glyph_map_gzip_stats = st.calculate_stats(obs_gzip, glyph_map_gzip_samples, smaller_is_better=True)
+    glyph_map_sim_stats = st.calculate_stats(obs_similarity, glyph_map_sim_samples, smaller_is_better=False)
+    glyph_map_entropy_stats = st.calculate_stats(obs_entropy, glyph_map_entropy_samples, smaller_is_better=False) # or True, distance?
+    glyph_map_ioc_stats = st.calculate_stats(obs_ioc, glyph_map_ioc_samples, smaller_is_better=False)
 
     # 8. Construct Result JSON
     results = {
@@ -231,29 +255,40 @@ def run_experiment(
                     "z_score": gzip_stats["z_score"],
                     "p_value_smaller": gzip_stats["p_value"]
                 },
-                "null_mapping_shuffle": {
-                     "mean": mapping_gzip_stats["mean"],
-                     "std": mapping_gzip_stats["std"],
-                     "z_score": mapping_gzip_stats["z_score"],
-                     "p_value_smaller": mapping_gzip_stats["p_value"]
+                "null_glyph_mapping": {
+                     "mean": glyph_map_gzip_stats["mean"],
+                     "std": glyph_map_gzip_stats["std"],
+                     "z_score": glyph_map_gzip_stats["z_score"],
+                     "p_value_smaller": glyph_map_gzip_stats["p_value"]
                 }
             },
             "trigram_cosine": {
                 "observed": obs_similarity,
-                "null_mapping_shuffle": {
-                    "mean": mapping_sim_stats["mean"],
-                    "std": mapping_sim_stats["std"],
-                    "z_score": mapping_sim_stats["z_score"],
-                    "p_value_greater": mapping_sim_stats["p_value"]
+                "null_alphabet_shuffle": {
+                    "mean": alphabet_shuffle_stats["mean"],
+                    "std": alphabet_shuffle_stats["std"],
+                    "z_score": alphabet_shuffle_stats["z_score"],
+                    "p_value_greater": alphabet_shuffle_stats["p_value"]
+                },
+                "null_glyph_mapping": {
+                    "mean": glyph_map_sim_stats["mean"],
+                    "std": glyph_map_sim_stats["std"],
+                    "z_score": glyph_map_sim_stats["z_score"],
+                    "p_value_greater": glyph_map_sim_stats["p_value"]
                 },
                 "latin_windows": {
                     "mean": latin_sim_stats["mean"],
                     "std": latin_sim_stats["std"],
-                    "p_value_greater": latin_sim_stats["p_value"] # How often is obs >= latin window?
+                    "p_value_greater": latin_sim_stats["p_value"]
                 }
             },
             "entropy": {
                 "observed": obs_entropy,
+                "null_glyph_mapping": {
+                    "mean": glyph_map_entropy_stats["mean"],
+                    "std": glyph_map_entropy_stats["std"],
+                    "p_value_greater": glyph_map_entropy_stats["p_value"]
+                },
                 "latin_windows": {
                     "mean": latin_entropy_stats["mean"],
                     "std": latin_entropy_stats["std"],
@@ -262,6 +297,11 @@ def run_experiment(
             },
             "index_of_coincidence": {
                 "observed": obs_ioc,
+                "null_glyph_mapping": {
+                    "mean": glyph_map_ioc_stats["mean"],
+                    "std": glyph_map_ioc_stats["std"],
+                    "p_value_greater": glyph_map_ioc_stats["p_value"]
+                },
                 "latin_windows": {
                     "mean": latin_ioc_stats["mean"],
                     "std": latin_ioc_stats["std"],
@@ -273,8 +313,9 @@ def run_experiment(
 
     if not no_raw:
         results["metrics"]["gzip"]["null_text_samples"] = null_gzip_samples
-        results["metrics"]["gzip"]["null_mapping_samples"] = mapping_gzip_samples
-        results["metrics"]["trigram_cosine"]["null_mapping_samples"] = mapping_sim_samples
+        results["metrics"]["gzip"]["null_glyph_samples"] = glyph_map_gzip_samples
+        results["metrics"]["trigram_cosine"]["null_alphabet_samples"] = alphabet_shuffle_sim_samples
+        results["metrics"]["trigram_cosine"]["null_glyph_samples"] = glyph_map_sim_samples
 
     # 9. Save Results
     results_dir = pathlib.Path("results")
@@ -330,7 +371,8 @@ def run_experiment(
     print(f"Entropy: Obs={obs_entropy:.4f} | Latin Mean={latin_entropy_stats['mean']:.4f}")
     print(f"IoC:     Obs={obs_ioc:.4f} | Latin Mean={latin_ioc_stats['mean']:.4f}")
     print(f"Gzip:    Obs={obs_gzip} | Text Shuffle Mean={gzip_stats['mean']:.1f} | p={gzip_stats['p_value']:.5f}")
-    print(f"Trigram: Obs={obs_similarity:.4f} | Mapping Null Mean={mapping_sim_stats['mean']:.4f} | p={mapping_sim_stats['p_value']:.5f}")
+    print(f"Trigram: Obs={obs_similarity:.4f} | Alphabet Null Mean={alphabet_shuffle_stats['mean']:.4f} | p={alphabet_shuffle_stats['p_value']:.5f}")
+    print(f"         vs Glyph Null: Mean={glyph_map_sim_stats['mean']:.4f} | p={glyph_map_sim_stats['p_value']:.5f}")
     print(f"         vs Latin Windows: Mean={latin_sim_stats['mean']:.4f}")
 
 
