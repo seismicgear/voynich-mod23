@@ -49,13 +49,13 @@ graph TD
 
     subgraph Optimization ["3. Optimization (Simulated Annealing)"]
         direction TB
-        Init[Init Random Maps<br>M_start, M_body, M_end]:::process
+        Init["Init Random Maps<br>M_start, M_body, M_end"]:::process
         TrainSet --> LoopStart((Start Loop))
         Init --> LoopStart
 
-        LoopStart --> Perturb[Perturbation:<br>Swap 2 tokens in random Map M]:::process
+        LoopStart --> Perturb["Perturbation:<br>Swap 2 tokens in random Map M"]:::process
         Perturb --> DecodeTrain[Decode Training Set]:::process
-        DecodeTrain --> Measure[Measure:<br>Trigram Cosine Similarity (S_new)]:::process
+        DecodeTrain --> Measure["Measure:<br>Trigram Cosine Similarity (S_new)"]:::process
         Measure --> CalcDelta["Calculate ΔE = S_new - S_curr"]:::process
 
         RefTrigrams -.-> Measure
@@ -67,12 +67,12 @@ graph TD
         Update --> CheckBest{"Is S_new > S_best?"}:::decision
         
         CheckBest -- Yes --> SaveBest[Save Best Maps]:::process
-        SaveBest --> CoolDown %% Closed the loop here
+        SaveBest --> CoolDown
         CheckBest -- No --> CoolDown
         
         %% Path 2: Reject
         CheckAccept -- No --> Revert[Revert Swap]:::process
-        Revert --> CoolDown[Cool Down:<br>Decrease Temperature T]:::process
+        Revert --> CoolDown["Cool Down:<br>Decrease Temperature T"]:::process
         
         CoolDown --> LoopEnd{Iter < Max?}:::decision
         LoopEnd -- Yes --> LoopStart
