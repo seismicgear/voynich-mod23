@@ -23,19 +23,62 @@ Our goal is to learn three separate mapping functions ($f_{start}, f_{body}, f_{
 
 ```mermaid
 graph TD
-    A[Start] --> B(setup_v2.py)
-    B -->|Downloads Data| C{Data Ready?}
-    C -->|Yes| D(tokenize_eva.py)
-    D -->|Learns Vocabulary| E[data/vocab_a.txt]
-    E --> F(solver.py)
-    F -->|Optimizes Mappings| G[Results]
+    %% Global Styles
+    classDef data fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef process fill:#f3e5f5,stroke:#4a148c,stroke-width:2px;
+    classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
+    classDef artifact fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
 
-    subgraph Solver Process
-    F1[Init Random Mappings] --> F2[Decode Training Set]
-    F2 --> F3[Calc Trigram Score]
-    F3 --> F4{Accept Change?}
-    F4 -->|Yes| F5[Update Best Map]
-    F4 -->|No| F2
+    subgraph Inputs ["1. Input Data & Resources"]
+        RawVoynich[("Voynich Transcriptions<br>(EVA)")]:::data
+        RefCorpus[("Reference Corpus<br>(English/Italian/Latin)")]:::data
+    end
+
+    subgraph Preprocessing ["2. Preprocessing & Initialization"]
+        RawVoynich -->|Parse & Filter (Lang A)| DataLoader(data_loader.py):::process
+        DataLoader -->|Reconstruct Lines| Lines[Line Objects]:::artifact
+        Lines -->|BPE Tokenization| Tokenizer(tokenize_eva.py):::process
+        Tokenizer -->|Generate| Vocab[("Vocabulary<br>(vocab_a.txt)")]:::artifact
+
+        RefCorpus -->|N-gram Analysis| RefTrigrams[("Reference Trigrams<br>(Vector V_ref)")]:::artifact
+
+        Lines -->|Interleaved Split| Split{Split Data}:::decision
+        Split -->|Even Lines| TrainSet[("Training Set")]:::data
+        Split -->|Odd Lines| TestSet[("Test Set")]:::data
+    end
+
+    subgraph Optimization ["3. Optimization (Simulated Annealing)"]
+        direction TB
+        Init[Init Random Maps<br>M_start, M_body, M_end]:::process
+        TrainSet --> LoopStart((Start Loop))
+        Init --> LoopStart
+
+        LoopStart --> Perturb[Perturbation:<br>Swap 2 tokens in random Map M]:::process
+        Perturb --> DecodeTrain[Decode Training Set]:::process
+        DecodeTrain --> Measure[Measure:<br>Trigram Cosine Similarity (S_new)]:::process
+        Measure --> CalcDelta["Calculate ΔE = S_new - S_curr"]:::process
+
+        RefTrigrams -.-> Measure
+
+        CalcDelta --> CheckAccept{"Accept?<br>(Metropolis Criterion)"}:::decision
+        CheckAccept -- "Yes (or P > rand)" --> Update[Update Current Map]:::process
+        Update --> CheckBest{"Is S_new > S_best?"}:::decision
+        CheckBest -- Yes --> SaveBest[Save Best Maps]:::process
+        CheckBest -- No --> CoolDown
+        Update --> CoolDown
+
+        CheckAccept -- No --> Revert[Revert Swap]:::process
+        Revert --> CoolDown[Cool Down:<br>Decrease Temperature T]:::process
+        CoolDown --> LoopEnd{Iter < Max?}:::decision
+        LoopEnd -- Yes --> LoopStart
+    end
+
+    subgraph Validation ["4. Validation & Output"]
+        LoopEnd -- No --> FinalEval[Final Evaluation]:::process
+        SaveBest -->|Best Maps| FinalEval
+        TestSet --> FinalEval
+        FinalEval -->|Decode Test Set| DecodedText[("Decoded Text")]:::artifact
+        FinalEval -->|Compute Final Metrics| Metrics[("Final Score<br>(Generalization)")]:::artifact
     end
 ```
 
