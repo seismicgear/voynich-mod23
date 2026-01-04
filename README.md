@@ -29,13 +29,13 @@ graph TD
     classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
     classDef artifact fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
 
-    subgraph Inputs ["1. Input Data &amp; Resources"]
+    subgraph Inputs ["1. Input Data & Resources"]
         RawVoynich[("Voynich Transcriptions<br>(EVA)")]:::data
         RefCorpus[("Reference Corpus<br>(English/Italian/Latin)")]:::data
     end
 
-    subgraph Preprocessing ["2. Preprocessing &amp; Initialization"]
-        RawVoynich -->|Parse &amp; Filter (Lang A)| DataLoader(data_loader.py):::process
+    subgraph Preprocessing ["2. Preprocessing & Initialization"]
+        RawVoynich -->|"Parse & Filter (Lang A)"| DataLoader(data_loader.py):::process
         DataLoader -->|Reconstruct Lines| Lines[Line Objects]:::artifact
         Lines -->|BPE Tokenization| Tokenizer(tokenize_eva.py):::process
         Tokenizer -->|Generate| Vocab[("Vocabulary<br>(vocab_a.txt)")]:::artifact
