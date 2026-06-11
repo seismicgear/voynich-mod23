@@ -3,8 +3,8 @@ results/
 __pycache__/
 *.pyc
 .pytest_cache/
-dist/
-build/
+/dist/
+/build/
 *.egg-info/
 electron/node_modules/
 electron/dist-electron/
