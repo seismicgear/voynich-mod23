@@ -56,6 +56,9 @@ def cmd_solve(args) -> int:
         "reference": args.reference,
         "hypothesis": args.hypothesis,
         "abjad": args.abjad,
+        "reverse": args.reverse,
+        "control": args.control,
+        "allow_nulls": args.allow_nulls,
         "lock_rounds": args.lock_rounds,
         "order": args.order,
         "bpe_merges": args.bpe_merges,
@@ -123,6 +126,31 @@ def cmd_sweep(args) -> int:
     return 0
 
 
+def cmd_diagnostics(args) -> int:
+    from .diagnostics import run_diagnostics
+    from .pipeline import save_report
+
+    report = run_diagnostics(
+        {
+            "currier_language": args.language,
+            "section": args.section,
+            "window": args.window,
+            "seed": args.seed if args.seed is not None else 0,
+        }
+    )
+    path = save_report(report)
+    print(f"\n{'corpus':38s} {'words':>7s} {'near<=1':>8s} {'exact':>7s} "
+          f"{'shuffled':>9s} {'excess':>7s}")
+    for row in report["rows"]:
+        print(f"{row['corpus'][:38]:38s} {row['n_words']:7d} "
+              f"{row['near_rate'] * 100:7.1f}% {row['exact_rate'] * 100:6.1f}% "
+              f"{row['shuffled_near_rate'] * 100:8.1f}% "
+              f"{row['locality_excess'] * 100:6.1f}p")
+    print(f"\n{report['verdict']}")
+    print(f"\nFull report: {path}")
+    return 0
+
+
 def cmd_benchmark(args) -> int:
     from . import corpus
     from .synthetic import run_benchmark
@@ -176,6 +204,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--hypothesis", default="simple", choices=list(HYPOTHESES))
     p.add_argument("--abjad", action="store_true",
                    help="score against the reference's consonant skeleton")
+    p.add_argument("--reverse", default="none", choices=["none", "words", "lines"],
+                   help="reading order: mirror glyphs within words, or fully RTL")
+    p.add_argument("--control", action="store_true",
+                   help="run on token-shuffled pseudo-Voynichese (null control)")
+    p.add_argument("--allow-nulls", action="store_true",
+                   help="abbreviation only: tokens may decode to nothing")
     p.add_argument("--lock-rounds", type=int, default=0,
                    help="crib-locking rounds: freeze dictionary-supported "
                         "tokens and re-anneal (simple/anagram)")
@@ -201,10 +235,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seed", type=int, default=None)
     p.set_defaults(fn=cmd_sweep)
 
+    p = sub.add_parser("diagnostics", help="self-citation statistics (generated-text test)")
+    p.add_argument("--language", default="A", choices=["A", "B", "all"])
+    p.add_argument("--section", default=None)
+    p.add_argument("--window", type=int, default=15)
+    p.add_argument("--seed", type=int, default=None)
+    p.set_defaults(fn=cmd_diagnostics)
+
     p = sub.add_parser("benchmark", help="validate solver on a known cipher")
     p.add_argument("--reference", default="english", choices=references)
     p.add_argument("--mode", default="substitution",
-                   choices=["substitution", "abbreviation", "anagram"])
+                   choices=["substitution", "abbreviation", "nulls", "anagram"])
     p.add_argument("--cipher-chars", type=int, default=4000)
     p.add_argument("--order", type=int, default=4, choices=[3, 4])
     p.add_argument("--iterations", type=int, default=20000)
@@ -213,6 +254,10 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_benchmark)
 
     args = parser.parse_args(argv)
+    print(
+        "Voynich Decipherment Workbench — built by Montgomery Kuykendall",
+        file=sys.stderr,
+    )
     return args.fn(args)
 
 

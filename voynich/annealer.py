@@ -173,17 +173,20 @@ def anneal_expansion(
     t_end: float = 0.0008,
     seed: int | None = None,
     init_key: np.ndarray | None = None,
+    allow_nulls: bool = False,
     progress: Callable[[dict], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     progress_every: int = 500,
 ) -> AnnealResult:
-    """Simulated annealing over expansion keys (token -> 1 or 2 letters).
+    """Simulated annealing over expansion keys (token -> 0-2 letters).
 
     Same schedule and bookkeeping as `anneal`, with a move set that can
     grow, shrink and permute expansions:
-      - set the first letter of a token
+      - set the first letter of a token (un-nullifying it if needed)
       - set or replace a token's second letter
-      - clear a token's second letter (back to a single-letter decode)
+      - clear a token's second letter — or, with `allow_nulls`, clear a
+        single-letter token entirely (the null-cipher hypothesis; the
+        scorer's output floor keeps deletion from running away)
       - swap the full expansions of two tokens
 
     `init_key` (if given) seeds the first restart — staging from the best
@@ -228,14 +231,29 @@ def anneal_expansion(
                 undo = (tok, 0, old)
             elif r < 0.65:
                 tok = int(rng.integers(0, movable))
-                old = int(key[tok, 1])
-                key[tok, 1] = int(rng.integers(0, A - 1))
-                undo = (tok, 1, old)
+                if key[tok, 0] == NO_CHAR:
+                    # Null token: a second letter makes no sense; grow the
+                    # first instead.
+                    old = NO_CHAR
+                    key[tok, 0] = int(rng.integers(0, A - 1))
+                    undo = (tok, 0, old)
+                else:
+                    old = int(key[tok, 1])
+                    key[tok, 1] = int(rng.integers(0, A - 1))
+                    undo = (tok, 1, old)
             elif r < 0.80:
                 tok = int(rng.integers(0, movable))
-                old = int(key[tok, 1])
-                key[tok, 1] = NO_CHAR
-                undo = (tok, 1, old)
+                if key[tok, 1] != NO_CHAR:
+                    old = int(key[tok, 1])
+                    key[tok, 1] = NO_CHAR
+                    undo = (tok, 1, old)
+                elif allow_nulls and key[tok, 0] != NO_CHAR:
+                    old = int(key[tok, 0])
+                    key[tok, 0] = NO_CHAR
+                    undo = (tok, 0, old)
+                else:
+                    old = int(key[tok, 1])
+                    undo = (tok, 1, old)  # no-op; harmless
             else:
                 a, b = rng.choice(movable, size=2, replace=False)
                 tmp = key[a].copy()
@@ -303,7 +321,8 @@ def anneal_expansion(
                 }
             )
         global_best_key, global_best_score = polish_expansion(
-            scorer, global_best_key, should_stop=should_stop
+            scorer, global_best_key, allow_nulls=allow_nulls,
+            should_stop=should_stop,
         )
         history.append((restarts_done * iterations, global_best_score))
 
@@ -489,29 +508,37 @@ def polish_expansion(
     scorer,
     key: np.ndarray,
     max_passes: int = 4,
+    allow_nulls: bool = False,
     should_stop: Callable[[], bool] | None = None,
 ) -> tuple[np.ndarray, float]:
     """Greedy coordinate descent on an expansion key: for each token try
-    every first letter, then every second-letter option (including none),
-    keeping improvements.  Deterministic finisher after annealing."""
+    every first letter (and none, when nulls are allowed), then every
+    second-letter option (including none), keeping improvements.
+    Deterministic finisher after annealing."""
     from .cipher import NO_CHAR
 
     key = key.copy()
     best = scorer.score(key)
     n_tokens = key.shape[0]
-    second_options = [NO_CHAR] + list(range(A - 1))
+    letters = list(range(A - 1))
+    first_options = ([NO_CHAR] + letters) if allow_nulls else letters
+    second_options = [NO_CHAR] + letters
 
     for _ in range(max_passes):
         improved = False
         for tok in range(n_tokens - 1):  # space (last index) stays pinned
             if should_stop is not None and should_stop():
                 return key, best
-            for col, options in ((0, range(A - 1)), (1, second_options)):
+            for col, options in ((0, first_options), (1, second_options)):
+                if col == 1 and key[tok, 0] == NO_CHAR:
+                    continue  # null tokens have no second letter
                 orig = int(key[tok, col])
                 best_c = orig
                 for c in options:
                     if c == orig:
                         continue
+                    if col == 0 and c == NO_CHAR and key[tok, 1] != NO_CHAR:
+                        continue  # keep the (first set => second set) shape
                     key[tok, col] = c
                     s = scorer.score(key)
                     if s > best:

@@ -272,6 +272,54 @@ def _run_anagram_benchmark(
     }
 
 
+def make_null_cipher(
+    plaintext: str,
+    null_frac: float = 0.12,
+    n_null_glyphs: int = 4,
+    seed: int | None = None,
+) -> tuple[EncodedCorpus, np.ndarray, np.ndarray]:
+    """Encrypt plaintext with a monoalphabetic substitution AND sprinkle
+    in meaningless null glyphs (the standard camouflage of quattrocento
+    diplomatic ciphers, e.g. Tranchedino's ledger).
+
+    Returns (encoded_corpus, true_expansion_key, plaintext_char_ids)."""
+    rng = np.random.default_rng(seed)
+    words = [w for w in plaintext.split() if w]
+    letters = sorted({ch for w in words for ch in w})
+
+    n_letters = len(letters)
+    n_glyphs = n_letters + n_null_glyphs
+    perm = rng.permutation(n_glyphs)
+    vocab = [f"g{j:02d}" for j in range(n_glyphs)]
+    letter_to_token = {letters[i]: int(perm[i]) for i in range(n_letters)}
+    null_tokens = [int(perm[n_letters + i]) for i in range(n_null_glyphs)]
+
+    lines: list[list[list[str]]] = []
+    for i in range(0, len(words), 8):
+        line = []
+        for w in words[i : i + 8]:
+            toks = []
+            for ch in w:
+                toks.append(vocab[letter_to_token[ch]])
+                if rng.random() < null_frac:
+                    toks.append(vocab[null_tokens[int(rng.integers(0, n_null_glyphs))]])
+            line.append(toks)
+        if line:
+            lines.append(line)
+
+    corpus = encode_corpus(lines, vocab, n_states=1)
+
+    char_id = {c: i for i, c in enumerate(ALPHABET)}
+    true_key = np.full((len(vocab) + 1, 2), NO_CHAR, dtype=np.int64)
+    true_key[len(vocab)] = (SPACE_ID, NO_CHAR)
+    for ch, tok in letter_to_token.items():
+        true_key[tok, 0] = char_id[ch]
+    # null tokens keep (NO_CHAR, NO_CHAR): they decode to nothing
+
+    plain_ids = expand_stream(true_key, corpus.token_stream)
+    return corpus, true_key, plain_ids
+
+
 def _split_for_benchmark(text: str, cipher_chars: int) -> tuple[str, str]:
     cut = max(len(text) - cipher_chars - 1, len(text) // 2)
     lm_text = text[:cut]
@@ -298,6 +346,8 @@ def run_benchmark(
     mode 'substitution': one glyph per letter, solved with plain keys.
     mode 'abbreviation': frequent bigrams become single glyphs, solved
     with expansion keys (token -> 1-2 letters).
+    mode 'nulls': substitution plus meaningless null glyphs, solved with
+    expansion keys allowed to decode tokens to nothing.
     mode 'anagram': letters shuffled inside every word, solved with
     word-level dictionary scoring."""
     lm_text, sample = _split_for_benchmark(text, cipher_chars)
@@ -307,9 +357,13 @@ def run_benchmark(
         )
     lm = CharNgramModel(order=order).fit(lm_text)
 
-    if mode == "abbreviation":
-        corpus, true_key, plain_ids = make_abbreviation_cipher(sample, seed=seed)
-        scorer = ExpansionScorer(corpus, lm)
+    if mode in ("abbreviation", "nulls"):
+        if mode == "nulls":
+            corpus, true_key, plain_ids = make_null_cipher(sample, seed=seed)
+            scorer = ExpansionScorer(corpus, lm, min_output_frac=0.5)
+        else:
+            corpus, true_key, plain_ids = make_abbreviation_cipher(sample, seed=seed)
+            scorer = ExpansionScorer(corpus, lm)
         init_key = staged_expansion_init(
             corpus, lm, order, iterations=min(iterations, 15_000), seed=seed
         )
@@ -320,6 +374,7 @@ def run_benchmark(
             restarts=restarts,
             seed=seed,
             init_key=init_key,
+            allow_nulls=(mode == "nulls"),
             progress=progress,
             should_stop=should_stop,
         )

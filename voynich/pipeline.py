@@ -75,6 +75,9 @@ DEFAULT_CONFIG = {
     "reference": "latin",        # any key in corpus.REFERENCE_SOURCES
     "hypothesis": "simple",      # see HYPOTHESES
     "abjad": False,              # score against consonant skeletons
+    "reverse": "none",           # none | words | lines (mirror-writing theory)
+    "control": False,            # shuffle tokens: the null-control calibration
+    "allow_nulls": False,        # abbreviation only: tokens may decode to nothing
     "lock_rounds": 0,            # crib-locking iterations (simple/anagram)
     "order": 4,
     "bpe_merges": 30,
@@ -131,6 +134,26 @@ def solve_voynich(
     tokenized = [[tok.tokenize(w) for w in line.words] for line in lines]
     vocab = tok.build_vocab([line.words for line in lines])
 
+    # 2b. Reading-order and control transforms.
+    reverse = cfg.get("reverse", "none")
+    if reverse == "words":
+        # Mirror writing: glyph order reversed inside each word.
+        tokenized = [[w[::-1] for w in line] for line in tokenized]
+    elif reverse == "lines":
+        # Full right-to-left reading: word order and glyph order reversed.
+        tokenized = [[w[::-1] for w in line[::-1]] for line in tokenized]
+    elif reverse != "none":
+        raise ValueError("reverse must be none, words or lines")
+    if cfg.get("control"):
+        # Null control: scramble which token sits where, preserving word
+        # lengths, line structure and the token multiset.  Any "signal" a
+        # hypothesis also finds here is objective-gaming, not Voynichese.
+        flat = [t for line in tokenized for w in line for t in w]
+        perm = np.random.default_rng(cfg["seed"]).permutation(len(flat))
+        flat = [flat[i] for i in perm]
+        it = iter(flat)
+        tokenized = [[[next(it) for _ in w] for w in line] for line in tokenized]
+
     # 3. Split lines: train on even, validate on odd
     train_lines = tokenized[0::2]
     test_lines = tokenized[1::2]
@@ -151,6 +174,8 @@ def solve_voynich(
         raise ValueError(
             f"lock_rounds is only supported for {LOCKABLE_HYPOTHESES}"
         )
+    if cfg.get("allow_nulls") and hypothesis != "abbreviation":
+        raise ValueError("allow_nulls requires the abbreviation hypothesis")
     locking_log: list[dict] = []
 
     # 4. Language model + anchors
@@ -250,8 +275,10 @@ def solve_voynich(
         ]
         decoded_ids = None
     elif hypothesis == "abbreviation":
-        train_scorer = ExpansionScorer(train_corpus, lm)
-        test_scorer = ExpansionScorer(test_corpus, lm)
+        allow_nulls = bool(cfg.get("allow_nulls", False))
+        frac = 0.5 if allow_nulls else 0.0
+        train_scorer = ExpansionScorer(train_corpus, lm, min_output_frac=frac)
+        test_scorer = ExpansionScorer(test_corpus, lm, min_output_frac=frac)
         init_key = staged_expansion_init(
             train_corpus, lm, order,
             iterations=min(cfg["iterations"], 15_000), seed=cfg["seed"],
@@ -263,6 +290,7 @@ def solve_voynich(
             restarts=cfg["restarts"],
             seed=cfg["seed"],
             init_key=init_key,
+            allow_nulls=allow_nulls,
             progress=progress,
             should_stop=should_stop,
         )
@@ -511,7 +539,7 @@ def sweep_references(
 def save_report(report: dict, results_dir: pathlib.Path | None = None) -> pathlib.Path:
     rdir = results_dir or RESULTS_DIR
     rdir.mkdir(parents=True, exist_ok=True)
-    kind = "sweep" if "table" in report else "solve"
+    kind = report.get("kind") or ("sweep" if "table" in report else "solve")
     out = rdir / f"{kind}_{report['meta']['timestamp']}.json"
     out.write_text(json.dumps(report, indent=2))
     return out

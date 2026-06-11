@@ -108,6 +108,34 @@ def test_expansion_scorer_objective_and_per_char(english_text):
         assert scorer.score(key) == pytest.approx(objective)
 
 
+def test_expand_stream_with_null_tokens():
+    corpus, lines, vocab = _toy_corpus()
+    key = np.full((corpus.n_tokens, 2), NO_CHAR, dtype=np.int64)
+    for tok_id in range(len(vocab)):
+        key[tok_id, 0] = _char("x")
+    key[0] = (NO_CHAR, NO_CHAR)  # token 'd' is a null
+    key[corpus.space_token] = (SPACE_ID, NO_CHAR)
+    out = "".join(ALPHABET[i] for i in expand_stream(key, corpus.token_stream))
+    # line 1: [d a i][q o] -> "xx xx"; line 2: [ch e d][d a][o] -> "xx x x"
+    assert out == "xx xx xx x x"
+
+
+def test_null_penalty_charges_rent(english_text):
+    corpus, _, _ = _toy_corpus()
+    lm = CharNgramModel(order=3).fit(english_text)
+    cheap = ExpansionScorer(corpus, lm, null_penalty=0.0)
+    rented = ExpansionScorer(corpus, lm, null_penalty=3.0)
+    key = random_expansion_key(corpus.n_tokens, np.random.default_rng(0))
+    nulled = key.copy()
+    nulled[0] = (NO_CHAR, NO_CHAR)
+    # Same key scores identically when nothing is nulled...
+    assert cheap.score(key) == pytest.approx(rented.score(key))
+    # ...and the rented scorer charges for every nulled occurrence.
+    n_occurrences = int((corpus.token_stream == 0).sum())
+    expected_rent = 3.0 * n_occurrences / len(corpus.token_stream)
+    assert rented.score(nulled) == pytest.approx(cheap.score(nulled) - expected_rent)
+
+
 def test_expansion_objective_penalizes_padding(english_text):
     """The per-token objective must charge for added letters; otherwise
     degenerate filler expansions win (the 'rerere' failure mode)."""

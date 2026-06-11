@@ -226,6 +226,69 @@ def test_lock_rounds_validation(client):
     assert resp.status_code == 400
 
 
+def test_diagnostics_run_lifecycle(client, tmp_path, monkeypatch):
+    import voynich.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "RESULTS_DIR", tmp_path / "results")
+    resp = client.post(
+        "/api/runs",
+        json={
+            "kind": "diagnostics",
+            "config": {"currier_language": "A", "window": 10},
+        },
+    )
+    assert resp.status_code == 201
+    run = _wait_for_run(client, resp.get_json()["id"])
+    assert run["status"] == "done", run.get("error")
+    result = run["result"]
+    assert len(result["rows"]) >= 2
+    assert result["rows"][0]["corpus"].startswith("Voynichese")
+    assert "verdict" in result
+
+
+def test_mode_option_validation(client):
+    # reverse must be a known reading order
+    resp = client.post(
+        "/api/runs",
+        json={"kind": "solve", "config": {"reverse": "boustrophedon"}},
+    )
+    assert resp.status_code == 400
+    # nulls require the abbreviation hypothesis
+    resp = client.post(
+        "/api/runs",
+        json={"kind": "solve", "config": {"hypothesis": "simple", "allow_nulls": True}},
+    )
+    assert resp.status_code == 400
+
+
+def test_reverse_and_control_solve(client, tmp_path, monkeypatch):
+    import voynich.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "RESULTS_DIR", tmp_path / "results")
+    resp = client.post(
+        "/api/runs",
+        json={
+            "kind": "solve",
+            "config": {
+                "currier_language": "A",
+                "reference": "english",
+                "hypothesis": "simple",
+                "reverse": "lines",
+                "control": True,
+                "order": 3,
+                "bpe_merges": 5,
+                "iterations": 800,
+                "restarts": 1,
+                "seed": 5,
+            },
+        },
+    )
+    assert resp.status_code == 201
+    run = _wait_for_run(client, resp.get_json()["id"])
+    assert run["status"] == "done", run.get("error")
+    assert run["result"]["meta"]["config"]["control"] is True
+
+
 def test_strip_vowels():
     from voynich.pipeline import strip_vowels
 

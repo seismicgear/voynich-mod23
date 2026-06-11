@@ -79,6 +79,8 @@ def create_app() -> Flask:
             run_id = manager.start_benchmark(config)
         elif kind == "sweep":
             run_id = manager.start_sweep(config)
+        elif kind == "diagnostics":
+            run_id = manager.start_diagnostics(config)
         else:
             return jsonify({"error": f"unknown run kind: {kind}"}), 400
         return jsonify({"id": run_id}), 201
@@ -104,6 +106,20 @@ def _clean_config(kind: str, raw: dict) -> dict:
     cfg: dict = {}
     seed = raw.get("seed")
     cfg["seed"] = int(seed) if seed not in (None, "") else None
+
+    if kind == "diagnostics":
+        lang = str(raw.get("currier_language", "A"))
+        if lang not in ("A", "B", "all"):
+            raise ValueError("currier_language must be A, B or all")
+        cfg["currier_language"] = lang
+        section = raw.get("section") or None
+        if section is not None and section not in corpus.SECTIONS:
+            raise ValueError(f"unknown section: {section}")
+        cfg["section"] = section
+        cfg["window"] = max(2, min(int(raw.get("window", 15)), 100))
+        cfg["seed"] = cfg["seed"] if cfg["seed"] is not None else 0
+        return cfg
+
     cfg["order"] = int(raw.get("order", 4))
     if cfg["order"] not in (3, 4):
         raise ValueError("order must be 3 or 4")
@@ -135,6 +151,14 @@ def _clean_config(kind: str, raw: dict) -> dict:
             raise ValueError(
                 f"lock rounds require one of: {', '.join(LOCKABLE_HYPOTHESES)}"
             )
+        reverse = str(raw.get("reverse", "none") or "none")
+        if reverse not in ("none", "words", "lines"):
+            raise ValueError("reverse must be none, words or lines")
+        cfg["reverse"] = reverse
+        cfg["control"] = bool(raw.get("control", False))
+        cfg["allow_nulls"] = bool(raw.get("allow_nulls", False))
+        if cfg["allow_nulls"] and hyp != "abbreviation":
+            raise ValueError("allow_nulls requires the abbreviation hypothesis")
 
     if kind == "sweep":
         refs = raw.get("references")
@@ -149,8 +173,10 @@ def _clean_config(kind: str, raw: dict) -> dict:
     if kind == "benchmark":
         cfg["cipher_chars"] = max(500, min(int(raw.get("cipher_chars", 4000)), 50_000))
         mode = str(raw.get("mode", "substitution"))
-        if mode not in ("substitution", "abbreviation", "anagram"):
-            raise ValueError("mode must be substitution, abbreviation or anagram")
+        if mode not in ("substitution", "abbreviation", "nulls", "anagram"):
+            raise ValueError(
+                "mode must be substitution, abbreviation, nulls or anagram"
+            )
         cfg["mode"] = mode
     return cfg
 

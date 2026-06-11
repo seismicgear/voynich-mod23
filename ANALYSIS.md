@@ -46,7 +46,7 @@ status in this workbench:
 | 2 | **Scribal abbreviation** — single signs encode letter *groups* (15th-c. Latin practice, Cappelli's lexicon) | raises decoded information per token | implemented: the `abbreviation` hypothesis (token → 1–2 letters, staged init + polish) |
 | 3 | **Abjad** — vowels unwritten (Hebrew/Arabic convention; basis of Hauer & Kondrak's 2016 Hebrew result) | removes the most predictable letters | implemented: the `abjad` flag scores against consonant-skeleton corpora |
 | 4 | **Positional/state-dependent alphabets** | mild | implemented (`positional`); extendable to word-position states |
-| 5 | **Nulls + nomenclator** — some glyphs decode to nothing, some tokens are whole-word codes | lowers | designed: allow zero-length expansions (needs a minimum-output guard so the optimizer can't delete the text) plus a code-token dictionary |
+| 5 | **Nulls** — some glyphs decode to nothing (standard camouflage in Tranchedino's quattrocento cipher ledger) | lowers | implemented: `allow_nulls` on the abbreviation hypothesis. Nulls pay rent (3 bits per nulled occurrence) plus an output floor — without the rent the optimizer "solves" the manuscript by deleting it. Validated: 100% recovery on synthetic null ciphers, nulls correctly identified. The nomenclator half (code-tokens for whole words) remains designed |
 | 6 | **Per-word anagramming** — letters written in scrambled/canonical order | n-grams uninformative; needs word-level scoring | implemented: the `anagram` hypothesis — words scored as letter multisets against a reference dictionary, with an *alphagram LM* (n-grams over sorted-letter words) supplying the smooth gradient that pure dictionary matching lacks; validated at 97% recovery on synthetic anagram ciphers |
 | 7 | **Unknown language / invented script** | — | partially testable: typological comparison (entropy, word grammar) against diverse families — Uralic and Basque are in the sweep for exactly this reason |
 
@@ -109,6 +109,28 @@ The infrastructure for (a) is this repository. The missing piece for (b)
 is a parameterized autocopy model (copy-distance distribution + per-glyph
 mutation rates) and a shared likelihood harness — the natural next
 milestone.
+
+A first instrument on this branch now exists: the **diagnostics mode**
+measures the self-citation signature directly (how often a content word
+has a near-duplicate among the previous N words, against an
+order-shuffled null and against reference languages). Early honest
+readings: with content words ≥4 glyphs and a 15-word window, Currier A
+shows a locality excess of ~8 points — double medieval Latin (~4) but
+*below* the King James Bible (~13), whose verse formulas are their own
+kind of self-citation. The instrument reports this without spin; sharper
+separation likely needs Timm's full graded-similarity measure and
+paragraph-level windows, which is exactly what the autocopy-likelihood
+milestone would deliver.
+
+Two further controls round out the methodology:
+
+* **Reading-order modes** (`reverse: words|lines`) test the
+  mirror-writing / right-to-left family of theories in one flag.
+* **The shuffled-text control** (`control: true`) reruns any
+  configuration on token-scrambled pseudo-Voynichese with identical word
+  lengths and line structure. Any "signal" that survives the scramble is
+  a property of the objective, not the manuscript — this is the
+  calibration the anagram episode (§2) showed we needed.
 
 ## 4. What "solved" would have to look like
 

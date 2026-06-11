@@ -109,9 +109,32 @@ does any of them actually fit?".
 
 ---
 
+## Modes for niche theories
+
+Beyond the four key families and the abjad flag, every solve accepts:
+
+* **Reading order** (`--reverse words|lines`) — mirror writing and full
+  right-to-left reading.
+* **Null tokens** (`--allow-nulls`, abbreviation only) — glyphs that decode
+  to nothing, the camouflage Tranchedino's 1450s cipher ledger documents.
+  Nulls pay rent (a per-occurrence bit penalty), or the optimizer would
+  "solve" the manuscript by deleting it; validated at 100% recovery on
+  synthetic null ciphers, nulls correctly identified.
+* **Shuffled-text control** (`--control`) — rerun any configuration on
+  token-scrambled pseudo-Voynichese with identical word lengths and line
+  structure. Signal that survives the scramble is objective-gaming, not
+  manuscript.
+* **Self-citation diagnostics** (`python -m voynich diagnostics`, or the
+  Diagnostics tab) — measures the copy-and-mutate fingerprint of the
+  leading non-language theory (Timm & Schinner): how often a content word
+  has a near-duplicate among the previous N words, versus shuffled nulls
+  and real languages. No key search; it interrogates the text itself.
+
 ## The GUI
 
-`python -m voynich gui` serves a single-page workbench:
+`python -m voynich gui` serves a single-page workbench (styled after the
+manuscript itself — parchment, iron-gall ink, rubrication — and built by
+**Montgomery Kuykendall**):
 
 * **Solve** — configure a run (Currier language A/B, manuscript section,
   reference language, hypothesis, n-gram order, BPE merges, iterations,
@@ -298,3 +321,7 @@ the annealer must recover ≥95% of a synthetic substitution cipher's letters.
   Gallico* (CLTK Latin Library mirror).
 * Italian: Dante, *La Divina Commedia* (Project Gutenberg #1012).
 * English: King James Bible (Project Gutenberg #10).
+
+---
+
+*Built by Montgomery Kuykendall.*

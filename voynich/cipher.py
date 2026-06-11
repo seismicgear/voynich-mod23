@@ -170,17 +170,18 @@ def random_expansion_key(
 
 def expand_stream(key: np.ndarray, token_stream: np.ndarray) -> np.ndarray:
     """Decode a token stream under an expansion key: each position emits
-    one char, plus a second where the key defines one."""
+    0, 1 or 2 chars (0 = the token is a NULL, decoding to nothing —
+    the Tranchedino-style null-cipher hypothesis)."""
     toks = token_stream.astype(np.int64)
     first = key[toks, 0]
     second = key[toks, 1]
-    has2 = second != NO_CHAR
-    n = len(toks)
-    extra = np.cumsum(has2)
-    pos = np.arange(n) + extra - has2  # output index of each first char
-    out = np.empty(n + int(extra[-1] if n else 0), dtype=np.int64)
-    out[pos] = first
-    out[pos[has2] + 1] = second[has2]
+    v0 = first != NO_CHAR
+    v1 = second != NO_CHAR
+    lengths = v0.astype(np.int64) + v1
+    starts = np.cumsum(lengths) - lengths
+    out = np.empty(int(lengths.sum()), dtype=np.int64)
+    out[starts[v0]] = first[v0]
+    out[(starts + v0)[v1]] = second[v1]
     return out
 
 
@@ -196,15 +197,33 @@ class ExpansionScorer:
     ('rerere...'): padding raises the per-char average for free, whereas
     per-token it costs exactly the bits the extra letters consume."""
 
-    def __init__(self, corpus: EncodedCorpus, lm):
+    def __init__(
+        self,
+        corpus: EncodedCorpus,
+        lm,
+        min_output_frac: float = 0.0,
+        null_penalty: float = 3.0,
+    ):
         self.token_stream = corpus.token_stream.astype(np.int64)
         self.n_positions = len(self.token_stream)
+        # With nulls allowed, deleting text shrinks the (negative) total
+        # and inflates the per-token objective.  Nulls therefore pay
+        # rent: `null_penalty` bits per nulled occurrence (the cost of
+        # signalling "skip this sign"), plus a hard output-length floor.
+        # Genuine noise glyphs save far more than the rent; real text
+        # does not.
+        self.min_chars = int(min_output_frac * self.n_positions)
+        self.null_penalty = null_penalty
         self.lm = lm
 
     def score(self, key: np.ndarray) -> float:
         """Search objective: bits per token (higher is better)."""
         out = expand_stream(key, self.token_stream)
+        if len(out) < self.min_chars:
+            return -1e9
         total = float(self.lm.logp[self.lm.ngram_indices(out)].sum())
+        n_null = int((key[self.token_stream, 0] == NO_CHAR).sum())
+        total -= self.null_penalty * n_null
         return total / self.n_positions
 
     def per_char(self, key: np.ndarray) -> float:
@@ -214,10 +233,12 @@ class ExpansionScorer:
 
 
 def expansion_strings(key: np.ndarray, vocab: list[str]) -> dict[str, str]:
-    """token -> decoded letter string ('' never occurs; 1 or 2 letters)."""
+    """token -> decoded letter string (0-2 letters; '' = null token)."""
     out = {}
     for tok_id, tok in enumerate(vocab):
-        s = ALPHABET[key[tok_id, 0]]
+        s = ""
+        if key[tok_id, 0] != NO_CHAR:
+            s += ALPHABET[key[tok_id, 0]]
         if key[tok_id, 1] != NO_CHAR:
             s += ALPHABET[key[tok_id, 1]]
         out[tok] = s
@@ -243,7 +264,10 @@ def decode_lines_expanded(
 
 def expansion_key_table(key: np.ndarray, vocab: list[str]) -> list[dict]:
     strings = expansion_strings(key, vocab)
-    return [{"token": tok, "all": strings[tok]} for tok in vocab]
+    return [
+        {"token": tok, "all": strings[tok] or "∅"}  # ∅ marks a null token
+        for tok in vocab
+    ]
 
 
 class NgramView:

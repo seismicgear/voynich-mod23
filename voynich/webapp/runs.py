@@ -14,6 +14,7 @@ import traceback
 from datetime import datetime, timezone
 
 from .. import corpus
+from ..diagnostics import run_diagnostics
 from ..pipeline import save_report, solve_voynich, sweep_references
 from ..synthetic import run_benchmark
 
@@ -53,6 +54,9 @@ class RunManager:
 
     def start_sweep(self, config: dict) -> int:
         return self._start("sweep", config)
+
+    def start_diagnostics(self, config: dict) -> int:
+        return self._start("diagnostics", config)
 
     # ---- internals -------------------------------------------------------
 
@@ -98,6 +102,10 @@ class RunManager:
                     progress=on_progress,
                     should_stop=run["stop_event"].is_set,
                 )
+                path = save_report(report)
+                report["saved_to"] = str(path)
+            elif run["kind"] == "diagnostics":
+                report = run_diagnostics(run["config"])
                 path = save_report(report)
                 report["saved_to"] = str(path)
             elif run["kind"] == "sweep":

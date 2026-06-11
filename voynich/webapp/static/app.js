@@ -84,6 +84,7 @@ async function startRun(kind, form) {
 $("#start-solve").addEventListener("click", () => startRun("solve", $("#solve-form")));
 $("#start-sweep").addEventListener("click", () => startRun("sweep", $("#solve-form")));
 $("#start-bench").addEventListener("click", () => startRun("benchmark", $("#bench-form")));
+$("#start-diag").addEventListener("click", () => startRun("diagnostics", $("#diag-form")));
 
 /* ---------- run list ---------- */
 function describeRun(r) {
@@ -94,6 +95,9 @@ function describeRun(r) {
   if (r.kind === "sweep") {
     const n = (c.references || []).length || "all";
     return `sweep · Currier ${c.currier_language || "?"} · ${c.hypothesis} · ${n} languages · ${c.iterations}×${c.restarts}`;
+  }
+  if (r.kind === "diagnostics") {
+    return `diagnostics · Currier ${c.currier_language || "?"} · self-citation window ${c.window}`;
   }
   return `benchmark · ${c.reference} · ${c.mode || "substitution"} · ${c.cipher_chars} chars · ${c.iterations}×${c.restarts}`;
 }
@@ -195,8 +199,8 @@ function drawChart(hist) {
   const X = (x) => pad + ((x - xmin) / (xmax - xmin || 1)) * (W - pad - 12);
   const Y = (y) => H - 26 - ((y - ymin) / (ymax - ymin || 1)) * (H - 26 - 12);
 
-  ctx.strokeStyle = "#3a342a";
-  ctx.fillStyle = "#9b927f";
+  ctx.strokeStyle = "#cdbb93";
+  ctx.fillStyle = "#6e5c40";
   ctx.font = "11px Georgia";
   for (let i = 0; i <= 4; i++) {
     const yv = ymin + ((ymax - ymin) * i) / 4;
@@ -204,9 +208,9 @@ function drawChart(hist) {
     ctx.beginPath(); ctx.moveTo(pad, ypix); ctx.lineTo(W - 12, ypix); ctx.stroke();
     ctx.fillText(yv.toFixed(3), 4, ypix + 4);
   }
-  ctx.fillText("best score (bits/char) vs iteration", pad, H - 8);
+  ctx.fillText("best score (bits) vs iteration", pad, H - 8);
 
-  ctx.strokeStyle = "#c9a227";
+  ctx.strokeStyle = "#8a3324";
   ctx.lineWidth = 1.6;
   ctx.beginPath();
   hist.forEach((h, i) => {
@@ -232,6 +236,25 @@ function renderResult(r) {
   }
   const res = r.result;
   if (!res) { el.innerHTML = ""; return; }
+
+  if (r.kind === "diagnostics") {
+    el.innerHTML =
+      `<div class="verdict">${escapeHtml(res.verdict)}</div>` +
+      `<table><tr><th>corpus</th><th>words</th><th>near-dup rate (&le;1 edit)</th>
+       <th>exact-repeat rate</th><th>shuffled rate</th><th>locality excess</th></tr>${res.rows
+         .map(
+           (row) =>
+             `<tr><td>${escapeHtml(row.corpus)}</td>
+              <td class="num">${row.n_words.toLocaleString()}</td>
+              <td class="num">${(row.near_rate * 100).toFixed(1)}%</td>
+              <td class="num">${(row.exact_rate * 100).toFixed(1)}%</td>
+              <td class="num">${(row.shuffled_near_rate * 100).toFixed(1)}%</td>
+              <td class="num"><b>${(row.locality_excess * 100).toFixed(1)} pts</b></td></tr>`
+         )
+         .join("")}</table>` +
+      (res.saved_to ? `<p class="hint">Saved to ${escapeHtml(res.saved_to)}</p>` : "");
+    return;
+  }
 
   if (r.kind === "sweep") {
     const best = res.table[0] || {};
