@@ -63,24 +63,47 @@ settle the question.
 
 ## Reference languages
 
-Sixteen corpora across the language families plausibly present in
-15th-century Europe, each labelled with its period in the GUI:
+Twenty-eight corpora spanning Rome's medieval trade world — Europe, the
+Middle East, Africa and Asia — each labelled with its period in the GUI:
 
 | Family | References |
 |--------|------------|
 | Italic | Latin — *De Imitatione Christi* (~1420s) + *De Bello Gallico* |
-| Romance | Italian — Dante (c. 1320) · Middle French — Froissart, *Chroniques* (c. 1370–1400) · Spanish — *Don Quijote* (1605) · Portuguese — *Os Lusíadas* (1572) · Catalan (19th c. literary) |
-| Germanic | English — KJV (1611) · German — Luther Bible tradition · Dutch — Bible |
-| Slavic | Czech — *Bible kralická* (1613) · Polish — *Pan Tadeusz* (1834) · Russian — Synodal Bible (1876) |
+| Romance | Italian — Dante (c. 1320) · Middle French — Froissart (c. 1370–1400) · Spanish — *Don Quijote* (1605) · Portuguese — *Os Lusíadas* (1572) · Catalan (19th c. literary) |
+| Celtic | Welsh (19th c. literary) · Irish — *Niamh* (Munster Irish, 1907) |
+| Germanic | English — KJV (1611) · German — Luther tradition · Dutch — Bible · Icelandic (closest living to Old Norse) |
+| Slavic | Czech — *Bible kralická* (1613) · Polish — *Pan Tadeusz* (1834) · Russian — Synodal (1876) |
 | Hellenic | Greek — Koine New Testament (the Byzantine standard) |
+| Albanian | Albanian — Bible (Venetian Albania) |
 | Uralic | Hungarian — Jókai (1872) · Finnish — *Kalevala* (1849) |
+| Turkic | Turkish — Bible (Ottoman sphere; the Ardıç Old-Turkic theory) |
+| Iranian | Persian — Bible (Silk Road lingua franca) |
+| Indo-Aryan | Hindi — Bible (Indian Ocean trade) |
+| Semitic | Arabic — Bible (Mediterranean lingua franca) · Hebrew — Bible (Hauer & Kondrak's top candidate) · Amharic — Bible (Ethiopian embassy to Rome, 1441) |
+| Cushitic | Somali — Bible (Mogadishu / Indian Ocean coast) |
+| Sinitic | Chinese — Bible as toneless pinyin syllables (Stolfi's comparison) |
 | Isolate | Basque — Leizarraga New Testament (1571) |
 
-Greek and Cyrillic are transliterated **one letter per letter** (θ→q, ч→q;
-tables in `corpus.py`) — multi-letter romanizations like θ→"th" would
-smuggle fake digraph statistics into the language models.
+Non-Latin scripts are transliterated **one sign per sign** (Greek θ→q,
+Cyrillic ч→q, Arabic ش→w, Hebrew ש→w; Ethiopic and Devanagari via their
+Unicode-name romanizations; Chinese via toneless pinyin) — multi-letter
+romanizations like θ→"th" would smuggle fake digraph statistics into the
+language models. Arabic and Hebrew pair naturally with the `abjad` flag,
+since those scripts already write few vowels.
 
-**Sweep mode** runs one configuration against all 16 references and ranks
+On the **Byblos-script / Italo-Celtic theory**: the Byblos syllabary is
+itself undeciphered and Venetic/Gaulish corpora are a few hundred
+inscriptions, so the theory cannot be tested end-to-end by anyone. Its
+two testable halves are covered: a CV-syllabary reading *is* the
+`abbreviation` hypothesis (token → consonant+vowel), and the Celtic and
+Italic references give the language side its nearest trainable relatives.
+If Italo-Celtic morphology lay under Voynichese, Welsh/Irish/Latin would
+separate from unrelated controls in the sweep. See
+[ANALYSIS.md](ANALYSIS.md) for the full assessment and for the
+quattrocento context (Giovanni Fontana's enciphered notebooks, Alberti,
+Tranchedino's cipher ledger, Hildegard's invented script).
+
+**Sweep mode** runs one configuration against all 28 references and ranks
 them by gap closed — the one-click answer to "which language fits best, and
 does any of them actually fit?".
 
@@ -176,6 +199,31 @@ score between the random-key floor (0%) and the real-language ceiling
 | 14 | German      | 72.9%      | `ssar an ansa anan s an n ast` |
 | 15 | Basque      | 69.8%      | `aari da duan cada o da a den` |
 | 16 | English     | 68.9%      | `ssed an ansa esat i an s are` |
+
+The twelve trade-world and Celtic references, same configuration:
+
+| #  | Reference  | Gap closed | Dict matches ≥3 | Decoded sample (held-out) |
+|----|------------|-----------:|----------------:|---------------------------|
+| 1  | Hindi      | 83.1%      | 38.8%           | `aana na naaa aana a na a nae` |
+| 2  | Persian    | 82.7%      | 51.1%           | `iian an aria mian u ai i aid` |
+| 3  | Somali     | 82.4%      | 55.1%           | `aaba ha haan aaha u ha a han` |
+| 4  | **Irish**  | 81.1%      | 32.9%           | `nnso ar anna anan a an n ann` |
+| 5  | **Welsh**  | 80.2%      | 37.9%           | `ddim ei eddo oiei i ei i ddi` |
+| 6  | Arabic     | 79.5%      | 49.9%           | `aaha la liam mala m lh a lhm` |
+| 7  | Hebrew     | 78.5%      | 44.6%           | `hhlh lu lihm lhlu h lh h lim` |
+| 8  | Albanian   | 78.5%      | 20.2%           | `aari si shat tesa i si e sia` |
+| 9  | Icelandic  | 74.8%      | 15.1%           | `aara ta trad datu a ta a tad` |
+| 10 | Amharic    | 72.8%      | 4.9%            | `eehe ne neee eene o ne e nee` |
+| 11 | Turkish    | 69.3%      | 40.1%           | `aana da duan nada o da a dan` |
+| 12 | Chinese    | 66.5%      | 19.3%           | `aang ni nuan nana a ni a nan` |
+
+The Celtic result is the **Italo-Celtic theory's test**: if Voynichese hid
+Italo-Celtic morphology, Irish, Welsh and Latin would separate decisively
+from unrelated controls. They don't — Irish (81.1%) and Welsh (80.2%) sit
+mid-pack, *below Somali* (82.4%), and Latin sits at 73.9%. The ranking
+everywhere tracks orthographic vowel-richness, not genetic affinity, and
+no sample reads as language. Hebrew — the best published candidate — lands
+at 78.5% with the same repetitive non-language output as everything else.
 
 Under the **anagram hypothesis** (letters unordered within words, dictionary
 scoring, 2 crib-locking rounds, 20k × 2), the optimizer *beats the

@@ -129,6 +129,67 @@ _REFERENCES = [
         "finnish", "Finnish — Kalevala (1849, archaic oral tradition)", "Uralic",
         (f"{_PG}/7000/pg7000.txt",),
     ),
+    # ---- Celtic (the Italo-Celtic / Byblos-theory test bed) ---------------
+    Reference(
+        "welsh", "Welsh — O.M. Edwards & contemporaries (19th c. literary)",
+        "Celtic",
+        (f"{_PG}/3680/pg3680.txt", f"{_PG}/57981/pg57981.txt",
+         f"{_PG}/67424/pg67424.txt"),
+    ),
+    Reference(
+        "irish", "Irish — Ua Laoghaire, Niamh (Munster Irish, 1907)", "Celtic",
+        (f"{_PG}/50913/pg50913.txt",),
+    ),
+    # ---- Germanic periphery -------------------------------------------------
+    Reference(
+        "icelandic", "Icelandic — 19th c. translations (closest to Old Norse)",
+        "Germanic",
+        (f"{_PG}/17025/pg17025.txt", f"{_PG}/16846/pg16846.txt"),
+    ),
+    # ---- Albanian -----------------------------------------------------------
+    Reference(
+        "albanian", "Albanian — Bible (Adriatic / Venetian Albania)",
+        "Albanian", (f"{_BIBLES}/Albanian.xml",), fmt="bible_xml",
+    ),
+    # ---- Turkic / Iranian (Silk Road, Ottoman sphere) ----------------------
+    Reference(
+        "turkish", "Turkish — Bible (Ottoman-era contact language)",
+        "Turkic", (f"{_BIBLES}/Turkish.xml",), fmt="bible_xml",
+    ),
+    Reference(
+        "persian", "Persian — Bible (Silk Road lingua franca)",
+        "Iranian", (f"{_BIBLES}/Farsi.xml",), fmt="bible_xml", script="arabic",
+    ),
+    # ---- Semitic (Mediterranean and Red Sea trade) -------------------------
+    Reference(
+        "arabic", "Arabic — Bible (Mediterranean trade lingua franca)",
+        "Semitic", (f"{_BIBLES}/Arabic.xml",), fmt="bible_xml", script="arabic",
+    ),
+    Reference(
+        "hebrew", "Hebrew — Bible (Hauer & Kondrak's top candidate)",
+        "Semitic", (f"{_BIBLES}/Hebrew.xml",), fmt="bible_xml", script="hebrew",
+    ),
+    Reference(
+        "amharic", "Amharic — Bible (Ethiopia; embassy to Rome 1441)",
+        "Semitic", (f"{_BIBLES}/Amharic.xml",), fmt="bible_xml",
+        script="ethiopic",
+    ),
+    # ---- African (Indian Ocean trade coast) --------------------------------
+    Reference(
+        "somali", "Somali — Bible (Mogadishu / Indian Ocean trade)",
+        "Cushitic", (f"{_BIBLES}/Somali.xml",), fmt="bible_xml",
+    ),
+    # ---- Asian (Silk Road / Indian Ocean) ----------------------------------
+    Reference(
+        "hindi", "Hindi — Bible (Indo-Aryan; Indian Ocean trade)",
+        "Indo-Aryan", (f"{_BIBLES}/Hindi.xml",), fmt="bible_xml",
+        script="devanagari",
+    ),
+    Reference(
+        "chinese", "Chinese — Bible as toneless pinyin syllables (Stolfi's comparison)",
+        "Sinitic", (f"{_BIBLES}/Chinese.xml",), fmt="bible_xml",
+        script="chinese",
+    ),
     # ---- Isolate ----------------------------------------------------------
     Reference(
         "basque", "Basque — Leizarraga New Testament (1571)", "Isolate",
@@ -139,7 +200,9 @@ _REFERENCES = [
 REFERENCE_SOURCES: dict[str, Reference] = {r.key: r for r in _REFERENCES}
 
 FAMILY_ORDER = [
-    "Italic", "Romance", "Germanic", "Slavic", "Hellenic", "Uralic", "Isolate",
+    "Italic", "Romance", "Celtic", "Germanic", "Slavic", "Hellenic",
+    "Albanian", "Uralic", "Turkic", "Iranian", "Indo-Aryan", "Semitic",
+    "Cushitic", "Sinitic", "Isolate",
 ]
 
 
@@ -201,19 +264,148 @@ CYRILLIC_TO_LATIN = {
     "ѫ": "u", "ѭ": "u", "ѧ": "a", "ѩ": "a",
 }
 
+# One Latin letter per Arabic letter where possible; emphatic consonants
+# merge with their plain counterparts (s./s, t./t, d./d, z./dh/z) and the
+# Persian additions (pe/che/zhe/gaf) are included.  kh -> x, sh -> w,
+# ghayn -> g, 'ayn -> e, qaf -> q.  Harakat are combining marks and are
+# stripped automatically.
+ARABIC_TO_LATIN = {
+    "ا": "a", "أ": "a", "إ": "a", "آ": "a", "ء": "", "ؤ": "u", "ئ": "i",
+    "ب": "b", "ت": "t", "ث": "c", "ج": "j", "ح": "h", "خ": "x",
+    "د": "d", "ذ": "z", "ر": "r", "ز": "z", "س": "s", "ش": "w",
+    "ص": "s", "ض": "d", "ط": "t", "ظ": "z", "ع": "e", "غ": "g",
+    "ف": "f", "ق": "q", "ك": "k", "ل": "l", "م": "m", "ن": "n",
+    "ه": "h", "ة": "t", "و": "u", "ي": "i", "ى": "a", "ـ": "",
+    # Persian
+    "پ": "p", "چ": "c", "ژ": "j", "گ": "g", "ک": "k", "ی": "i",
+}
+
+# One Latin letter per Hebrew letter (final forms folded); niqqud are
+# combining marks and are stripped automatically.  het -> x, tsadi -> c,
+# shin -> w, ayin -> e, vav -> u, yod -> i.
+HEBREW_TO_LATIN = {
+    "א": "a", "ב": "b", "ג": "g", "ד": "d", "ה": "h", "ו": "u",
+    "ז": "z", "ח": "x", "ט": "t", "י": "i", "כ": "k", "ך": "k",
+    "ל": "l", "מ": "m", "ם": "m", "נ": "n", "ן": "n", "ס": "s",
+    "ע": "e", "פ": "p", "ף": "p", "צ": "c", "ץ": "c", "ק": "q",
+    "ר": "r", "ש": "w", "ת": "t", "־": " ",
+}
+
 # Latin-script letters that NFKD does not decompose to ASCII.
 _LATIN_FOLDS = {
     "ß": "ss", "æ": "ae", "œ": "oe", "ł": "l", "ø": "o", "đ": "d",
     "þ": "t", "ð": "d", "ŋ": "n", "ı": "i",
 }
 
+# Devanagari dependent vowel signs (which REPLACE the consonant's
+# inherent 'a') and other signs, by the last word of the Unicode name.
+_DEVANAGARI_VOWEL_SIGNS = {
+    "AA": "a", "I": "i", "II": "i", "U": "u", "UU": "u", "E": "e",
+    "AI": "ai", "O": "o", "AU": "au", "R": "r", "RR": "r", "L": "l",
+}
+
+
+def _name_syllable(ch: str, prefix: str) -> str | None:
+    """Romanization embedded in a Unicode character name, e.g.
+    'ETHIOPIC SYLLABLE QA' -> 'qa'.  Only the last word of the name is
+    the syllable — earlier words are phonetic qualifiers ('ETHIOPIC
+    SYLLABLE GLOTTAL A' is just 'a')."""
+    name = unicodedata.name(ch, "")
+    if name.startswith(prefix):
+        tail = name[len(prefix):].strip().lower().split()[-1]
+        return re.sub(r"[^a-z]", "", tail)
+    return None
+
+
+def _transliterate_ethiopic(text: str) -> str:
+    """Ethiopic fidel -> Latin CV syllables via Unicode names (the names
+    carry the standard romanization)."""
+    out = []
+    cache: dict[str, str] = {}
+    for ch in text:
+        mapped = cache.get(ch)
+        if mapped is None:
+            syl = _name_syllable(ch, "ETHIOPIC SYLLABLE")
+            if syl is not None:
+                mapped = syl
+            elif ch.isspace() or unicodedata.category(ch).startswith("P"):
+                mapped = " "
+            else:
+                mapped = " "
+            cache[ch] = mapped
+        out.append(mapped)
+    return "".join(out)
+
+
+def _transliterate_devanagari(text: str) -> str:
+    """Devanagari -> Latin via Unicode names, handling the abugida's
+    inherent vowel: consonants carry 'a', dependent vowel signs replace
+    it, virama deletes it."""
+    out: list[str] = []
+
+    def drop_inherent_a() -> None:
+        if out and out[-1].endswith("a") and len(out[-1]) > 1:
+            out[-1] = out[-1][:-1]
+
+    for ch in text:
+        name = unicodedata.name(ch, "")
+        if name.startswith("DEVANAGARI LETTER "):
+            tail = name[len("DEVANAGARI LETTER "):].strip().lower()
+            tail = re.sub(r"[^a-z]", "", tail)
+            # Consonant names have no vowel ending in the name itself
+            # (KA includes the inherent a already); independent vowels
+            # (A, AA, I, ...) come through as-is.
+            out.append(tail)
+        elif name.startswith("DEVANAGARI VOWEL SIGN "):
+            sign = name[len("DEVANAGARI VOWEL SIGN "):].strip()
+            drop_inherent_a()
+            out.append(_DEVANAGARI_VOWEL_SIGNS.get(
+                sign, re.sub(r"[^a-z]", "", sign.lower())))
+        elif name == "DEVANAGARI SIGN VIRAMA":
+            drop_inherent_a()
+        elif name == "DEVANAGARI SIGN ANUSVARA":
+            out.append("n")
+        elif name == "DEVANAGARI SIGN VISARGA":
+            out.append("h")
+        elif "a" <= ch.lower() <= "z":
+            out.append(ch.lower())
+        else:
+            out.append(" ")
+    return "".join(out)
+
+
+def _transliterate_chinese(text: str) -> str:
+    """Chinese characters -> toneless pinyin syllables, one syllable per
+    'word' (Stolfi's comparison of Voynichese word grammar to Mandarin
+    syllable structure operates at exactly this level)."""
+    try:
+        from pypinyin import lazy_pinyin
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "the Chinese reference needs the 'pypinyin' package "
+            "(pip install pypinyin)"
+        ) from exc
+    return " ".join(lazy_pinyin(text))
+
 
 def transliterate(text: str, script: str) -> str:
-    """Map Greek or Cyrillic text to the solver's Latin alphabet,
-    one letter per letter.  Unmapped characters become spaces."""
+    """Map non-Latin text to the solver's Latin alphabet, one letter per
+    letter where the source script allows it.  Unmapped characters
+    become spaces."""
     if script == "latin":
         return text
-    table = GREEK_TO_LATIN if script == "greek" else CYRILLIC_TO_LATIN
+    if script == "chinese":
+        return _transliterate_chinese(text)
+    if script == "ethiopic":
+        return _transliterate_ethiopic(text)
+    if script == "devanagari":
+        return _transliterate_devanagari(text)
+    table = {
+        "greek": GREEK_TO_LATIN,
+        "cyrillic": CYRILLIC_TO_LATIN,
+        "arabic": ARABIC_TO_LATIN,
+        "hebrew": HEBREW_TO_LATIN,
+    }[script]
     # NFD strips Greek tonos/polytonic accents and Cyrillic stress marks
     # into combining characters, which the loop below skips.
     decomposed = unicodedata.normalize("NFD", text.lower())

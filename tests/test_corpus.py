@@ -1,3 +1,5 @@
+import pytest
+
 from voynich.corpus import (
     FAMILY_ORDER,
     REFERENCE_SOURCES,
@@ -66,15 +68,55 @@ def test_cyrillic_transliteration():
 
 def test_reference_registry_covers_requested_families():
     families = {r.family for r in REFERENCE_SOURCES.values()}
-    assert {"Romance", "Germanic", "Slavic", "Hellenic", "Uralic", "Isolate"} <= families
+    assert {
+        "Romance", "Celtic", "Germanic", "Slavic", "Hellenic", "Uralic",
+        "Turkic", "Iranian", "Indo-Aryan", "Semitic", "Cushitic", "Sinitic",
+        "Isolate",
+    } <= families
     assert set(FAMILY_ORDER) >= families
     for expected in ("latin", "french", "spanish", "portuguese", "czech",
                      "polish", "russian", "basque", "greek", "hungarian",
-                     "finnish", "german", "dutch", "catalan"):
+                     "finnish", "german", "dutch", "catalan",
+                     "welsh", "irish", "icelandic", "albanian", "turkish",
+                     "persian", "arabic", "hebrew", "amharic", "somali",
+                     "hindi", "chinese"):
         assert expected in REFERENCE_SOURCES
     catalog = reference_catalog()
     n_items = sum(len(g["items"]) for g in catalog)
     assert n_items == len(REFERENCE_SOURCES)
+
+
+def test_arabic_transliteration():
+    assert transliterate("سلام", "arabic") == "slam"
+    # harakat (combining vowel marks) are stripped
+    assert transliterate("بِسْمِ", "arabic") == "bsm"
+
+
+def test_hebrew_transliteration():
+    # shalom: shin -> w, lamed -> l, vav -> u, final mem -> m
+    assert transliterate("שלום", "hebrew") == "wlum"
+    # niqqud stripped, final forms folded
+    assert transliterate("מֶלֶךְ", "hebrew") == "mlk"
+
+
+def test_ethiopic_transliteration():
+    # Unicode names carry the romanization; qualifier words are dropped
+    assert transliterate("ሀ", "ethiopic") == "ha"
+    assert transliterate("አ", "ethiopic") == "a"  # GLOTTAL A -> a
+
+
+def test_devanagari_transliteration():
+    # ka + vowel sign i -> ki (inherent a replaced)
+    assert transliterate("कि", "devanagari") == "ki"
+    # ka + virama -> k (inherent a deleted)
+    assert transliterate("क्", "devanagari") == "k"
+    assert transliterate("नमस्ते", "devanagari") == "namaste"
+
+
+def test_chinese_transliteration():
+    pytest.importorskip("pypinyin")
+    out = transliterate("光", "chinese")
+    assert out == "guang"
 
 
 def test_bible_xml_extractor():

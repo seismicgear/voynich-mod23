@@ -132,7 +132,108 @@ Every published claim so far fails at least two of these. A tool that makes
 all four checkable at a button press is more useful to the field than
 another claimed decipherment.
 
-## 5. Honest accounting of this workbench's limits
+## 5. Specific theories and how this workbench tests them
+
+### The Byblos-script / Italo-Celtic theory
+
+One circulating theory holds that the manuscript is written in a
+descendant of the **Byblos syllabary** (a Bronze Age pseudo-hieroglyphic
+script from Lebanon) and encodes an **archaic Italo-Celtic language**
+(possibly Venetic, with Gaulish/Greek/Germanic loans). Honest assessment
+before testing:
+
+* The Byblos syllabary is *itself undeciphered* (its corpus is roughly a
+  dozen inscriptions). Reading one undeciphered script through another
+  multiplies unknowns rather than dividing them — no statistical test can
+  validate the chain end to end.
+* There is no Venetic or Gaulish corpus large enough to train a language
+  model on (a few hundred short inscriptions each).
+
+What *can* be tested, and now is:
+
+* **The syllabary half**: a CV-syllabary reading means each glyph token
+  decodes to a consonant+vowel pair — which is exactly the
+  `abbreviation` hypothesis (token → 1–2 letters). A Byblos-style reading
+  of Voynichese into any reference language is a run of
+  `--hypothesis abbreviation` against it; the machinery recovers
+  synthetic syllabary-style ciphers at 75–93%.
+* **The Italo-Celtic half**: the nearest living relatives with usable
+  corpora are now in the registry — **Welsh** and **Irish** on the Celtic
+  side, Latin/Italian on the Italic side. If Voynichese had Italo-Celtic
+  morphology underneath a substitution-family encoding, the Celtic and
+  Italic references would rank far above unrelated controls (Somali,
+  Chinese, Basque) in the sweep. That separation is the testable claim;
+  run it and read the table.
+
+### The trade-network argument (it was found near Rome…)
+
+…and Rome's trade world reached from Iceland to China, so the registry
+now covers it: **Arabic** (Mediterranean lingua franca), **Hebrew**
+(Hauer & Kondrak's published best candidate), **Persian** (Silk Road),
+**Turkish** (the Ardıç family's Old Turkic theory), **Amharic** (an
+Ethiopian embassy reached Rome for the Council of Florence in 1441 —
+inside the carbon window), **Somali** (Indian Ocean coast), **Hindi**
+(Indian Ocean trade), **Chinese** (as toneless pinyin syllables — Stolfi's
+classic observation that Voynichese word grammar resembles Mandarin
+syllable structure operates exactly at this level), plus **Welsh, Irish,
+Icelandic, Albanian** for the European periphery. Arabic, Hebrew, Persian,
+Amharic and Hindi are transliterated one-sign-per-sign (tables and
+Unicode-name romanization in `corpus.py`); Arabic-script and Hebrew
+references pair naturally with the `abjad` flag since those scripts
+already omit most vowels.
+
+## 6. Polymaths and invented scripts: the historical company the manuscript keeps
+
+The question "did anyone of that era make things like this?" has a firm
+answer: yes, and the parallels are instructive.
+
+* **Giovanni Fontana (c. 1395–1455)** — Paduan-trained physician-engineer
+  in Venetian service. His *Bellicorum instrumentorum liber* (1420s, now
+  in Munich) and *Secretum de thesauro* are **book-length manuscripts
+  written in an invented cipher script of letterless signs**, with
+  copious technical drawings — the same decade, the same Veneto, and the
+  same "entire enciphered book" format as the Voynich. Crucially,
+  Fontana's cipher is a **simple substitution** and was read easily once
+  examined. The Voynich resists exactly the attack that cracked Fontana —
+  quantitatively, by every run in this workbench — which is the cleanest
+  single argument that it is not a plain substitution cipher.
+* **Hildegard of Bingen (1098–1179)** — her *Litterae ignotae* (invented
+  alphabet) and *Lingua ignota* (constructed vocabulary of ~1,000 words,
+  mostly for plants, medicine and the divine) prove the medieval
+  "invented script + invented lexicon for a herbal-medical corpus" genre
+  existed centuries before the Voynich.
+* **Leon Battista Alberti (1404–1472)** — *De cifris* (1467), the cipher
+  disk, and the first European description of **polyalphabetic**
+  encipherment; the `positional` hypothesis tests the simplest
+  state-dependent family on Voynichese.
+* **Francesco Tranchedino (Milan, c. 1450s)** — his surviving notebook of
+  diplomatic ciphers documents the *actual* key families of the
+  quattrocento chancery: substitutions extended with **nulls, homophones
+  and nomenclator code-words**. That is precisely rung #5 of the
+  hypothesis ladder, and the strongest historical argument for
+  implementing it next.
+* **Ramon Llull (1232–1316)** and the Kabbalist **Abraham Abulafia
+  (1240–c. 1291)** — combinatorial letter-permutation arts. If the
+  manuscript is a *generated* artifact (the self-citation branch), this
+  is the intellectual tradition a generator would have come from; Gordon
+  Rugg's later grille argument is the same idea mechanized.
+* **Johannes Trithemius (1462–1516)** and **Athanasius Kircher
+  (1602–1680)** bracket the story: Trithemius founded systematic
+  steganography just after the manuscript's creation; Kircher — the era's
+  most famous (and famously overconfident) decipherer — is the very
+  person the manuscript was sent to in 1665, and he never published a
+  reading.
+
+The pattern across all of them: every *genuine* enciphered book of the
+period that survives (Fontana's above all) fell to frequency analysis
+the moment someone competent tried, because real working ciphers of that
+century were substitution-family. The Voynich's resistance to the entire
+substitution family — now demonstrated across 28 languages and four key
+families in this workbench — is the strongest internal evidence that it
+is either something rarer (verbose/nomenclator, which Tranchedino's
+notebook shows existed) or not a cipher at all.
+
+## 7. Honest accounting of this workbench's limits
 
 * Reference corpora are proxies: Bible translations and later literature
   stand in for 15th-century vernaculars where no clean medieval corpus is
