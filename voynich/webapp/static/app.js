@@ -57,7 +57,11 @@ function formConfig(form) {
   const cfg = {};
   for (const el of form.elements) {
     if (!el.name) continue;
-    cfg[el.name] = el.value === "" ? null : el.value;
+    if (el.type === "checkbox") {
+      cfg[el.name] = el.checked;
+    } else {
+      cfg[el.name] = el.value === "" ? null : el.value;
+    }
   }
   return cfg;
 }
@@ -78,6 +82,7 @@ async function startRun(kind, form) {
 }
 
 $("#start-solve").addEventListener("click", () => startRun("solve", $("#solve-form")));
+$("#start-sweep").addEventListener("click", () => startRun("sweep", $("#solve-form")));
 $("#start-bench").addEventListener("click", () => startRun("benchmark", $("#bench-form")));
 
 /* ---------- run list ---------- */
@@ -86,7 +91,11 @@ function describeRun(r) {
   if (r.kind === "solve") {
     return `solve · Currier ${c.currier_language || "?"} vs ${c.reference} · ${c.hypothesis} · ${c.iterations}×${c.restarts}`;
   }
-  return `benchmark · ${c.reference} · ${c.cipher_chars} chars · ${c.iterations}×${c.restarts}`;
+  if (r.kind === "sweep") {
+    const n = (c.references || []).length || "all";
+    return `sweep · Currier ${c.currier_language || "?"} · ${c.hypothesis} · ${n} languages · ${c.iterations}×${c.restarts}`;
+  }
+  return `benchmark · ${c.reference} · ${c.mode || "substitution"} · ${c.cipher_chars} chars · ${c.iterations}×${c.restarts}`;
 }
 
 async function refreshRuns() {
@@ -148,12 +157,20 @@ async function pollDetail() {
 
   const p = r.progress || {};
   if (p.total_iterations) {
-    const total = p.total_iterations * (p.restarts || 1);
-    const done = (p.restart || 0) * p.total_iterations + p.iteration;
+    let total = p.total_iterations * (p.restarts || 1);
+    let done = (p.restart || 0) * p.total_iterations + p.iteration;
+    let prefix = "";
+    if (p.n_langs) {
+      done += (p.lang_index || 0) * total;
+      total *= p.n_langs;
+      prefix = `language ${(p.lang_index || 0) + 1}/${p.n_langs} (${p.language}) · `;
+    }
+    const phase = p.phase === "polishing" ? " · polishing key" : "";
     $("#bar-fill").style.width = `${(100 * done) / total}%`;
     $("#progress-text").textContent =
+      prefix +
       `restart ${(p.restart || 0) + 1}/${p.restarts} · iteration ${p.iteration.toLocaleString()}/${p.total_iterations.toLocaleString()}` +
-      ` · T=${(p.temperature || 0).toExponential(2)} · best score ${(p.best_score || 0).toFixed(4)} bits/char`;
+      ` · T=${(p.temperature || 0).toExponential(2)} · best score ${(p.best_score || 0).toFixed(4)}${phase}`;
   }
   drawChart(r.history || []);
   renderResult(r);
@@ -215,6 +232,28 @@ function renderResult(r) {
   }
   const res = r.result;
   if (!res) { el.innerHTML = ""; return; }
+
+  if (r.kind === "sweep") {
+    const best = res.table[0] || {};
+    el.innerHTML =
+      `<div class="verdict">${escapeHtml(res.note)}</div>` +
+      `<h3>Ranked results (${res.table.length} languages)</h3>
+       <table><tr><th>#</th><th>reference</th><th>family</th><th>gap closed</th>
+       <th>held-out</th><th>floor</th><th>ceiling</th><th>decoded sample</th></tr>${res.table
+         .map(
+           (row, i) =>
+             `<tr><td class="num">${i + 1}</td><td>${escapeHtml(row.label)}</td>
+              <td>${escapeHtml(row.family)}</td>
+              <td class="num"><b>${(row.gap_closed * 100).toFixed(1)}%</b></td>
+              <td class="num">${row.test_heldout.toFixed(3)}</td>
+              <td class="num">${row.random_key_floor.toFixed(3)}</td>
+              <td class="num">${row.reference_ceiling.toFixed(3)}</td>
+              <td class="mono">${escapeHtml(row.sample)}</td></tr>`
+         )
+         .join("")}</table>` +
+      (res.saved_to ? `<p class="hint">Saved to ${escapeHtml(res.saved_to)}</p>` : "");
+    return;
+  }
 
   if (r.kind === "benchmark") {
     el.innerHTML =

@@ -21,6 +21,24 @@ def test_solver_recovers_synthetic_cipher(english_text):
     assert report["best_score"] > report["random_key_score_mean"] + 2.0
 
 
+def test_solver_recovers_abbreviation_cipher(english_text):
+    """The expansion-key solver must crack a scribal-abbreviation cipher
+    (frequent bigrams written as single signs). Harder than plain
+    substitution — segmentation errors are coupled — so the bar is lower
+    but still far above anything chance produces."""
+    report = run_benchmark(
+        english_text,
+        order=4,
+        cipher_chars=3500,
+        iterations=30000,
+        restarts=2,
+        seed=7,
+        mode="abbreviation",
+    )
+    assert report["accuracy"] >= 0.75
+    assert report["best_score"] > report["random_key_score_mean"] + 2.0
+
+
 def test_stop_flag_aborts_early(english_text):
     calls = {"n": 0}
 

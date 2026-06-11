@@ -45,8 +45,12 @@
         </label>
         <label>Reference language
           <select name="reference">
-            {% for ref in references %}
-            <option value="{{ ref }}" {% if ref == 'latin' %}selected{% endif %}>{{ ref }}</option>
+            {% for group in catalog %}
+            <optgroup label="{{ group.family }}">
+              {% for item in group['items'] %}
+              <option value="{{ item.key }}" {% if item.key == 'latin' %}selected{% endif %}>{{ item.label }}</option>
+              {% endfor %}
+            </optgroup>
             {% endfor %}
           </select>
         </label>
@@ -54,19 +58,26 @@
           <select name="hypothesis">
             <option value="simple" selected>Simple substitution (token &rarr; letter)</option>
             <option value="positional">Positional (line-start / body / line-end keys)</option>
+            <option value="abbreviation">Abbreviation (token &rarr; 1&ndash;2 letters)</option>
           </select>
         </label>
         <label>n-gram order
           <select name="order"><option>3</option><option selected>4</option></select>
         </label>
         <label>BPE merges <input name="bpe_merges" type="number" value="30" min="0" max="200"></label>
+        <label class="check"><span>Abjad (vowels unwritten)</span>
+          <input name="abjad" type="checkbox" title="Score against the reference's consonant skeleton — the Hebrew/Arabic-style hypothesis">
+        </label>
         <label>Iterations / restart <input name="iterations" type="number" value="60000" min="100" max="2000000"></label>
         <label>Restarts <input name="restarts" type="number" value="3" min="1" max="20"></label>
         <label>Seed (optional) <input name="seed" type="number" placeholder="random"></label>
       </form>
       <button id="start-solve" class="primary">Start solve run</button>
+      <button id="start-sweep">Sweep all {{ n_references }} languages</button>
       <p class="hint">Trains on even-numbered lines, validates on held-out odd lines. The verdict
-      compares the held-out score against a random-key floor and a real-language ceiling.</p>
+      compares the held-out score against a random-key floor and a real-language ceiling.
+      A sweep runs the current configuration against every reference language and ranks the
+      results — the chosen reference above is ignored.</p>
     </div>
   </section>
 
@@ -80,9 +91,19 @@
       <form id="bench-form" class="grid">
         <label>Reference language
           <select name="reference">
-            {% for ref in references %}
-            <option value="{{ ref }}" {% if ref == 'english' %}selected{% endif %}>{{ ref }}</option>
+            {% for group in catalog %}
+            <optgroup label="{{ group.family }}">
+              {% for item in group['items'] %}
+              <option value="{{ item.key }}" {% if item.key == 'english' %}selected{% endif %}>{{ item.label }}</option>
+              {% endfor %}
+            </optgroup>
             {% endfor %}
+          </select>
+        </label>
+        <label>Cipher type
+          <select name="mode">
+            <option value="substitution" selected>Substitution (one glyph per letter)</option>
+            <option value="abbreviation">Abbreviation (glyphs for letter pairs)</option>
           </select>
         </label>
         <label>Cipher length (chars) <input name="cipher_chars" type="number" value="4000" min="500" max="50000"></label>

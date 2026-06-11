@@ -102,6 +102,122 @@ def test_solve_run_lifecycle(client, tmp_path, monkeypatch):
     assert (tmp_path / "results").exists()
 
 
+def test_sweep_run_lifecycle(client, tmp_path, monkeypatch):
+    import voynich.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "RESULTS_DIR", tmp_path / "results")
+    resp = client.post(
+        "/api/runs",
+        json={
+            "kind": "sweep",
+            "config": {
+                "currier_language": "A",
+                "references": ["english", "german"],
+                "hypothesis": "simple",
+                "order": 3,
+                "bpe_merges": 10,
+                "iterations": 1500,
+                "restarts": 1,
+                "seed": 5,
+            },
+        },
+    )
+    assert resp.status_code == 201, resp.get_json()
+    run_id = resp.get_json()["id"]
+
+    run = _wait_for_run(client, run_id)
+    assert run["status"] == "done", run.get("error")
+    table = run["result"]["table"]
+    assert len(table) == 2
+    assert {row["reference"] for row in table} == {"english", "german"}
+    # Ranked descending by gap closed
+    assert table[0]["gap_closed"] >= table[1]["gap_closed"]
+
+
+def test_sweep_validation(client):
+    resp = client.post(
+        "/api/runs",
+        json={"kind": "sweep", "config": {"references": ["english", "klingon"]}},
+    )
+    assert resp.status_code == 400
+    resp = client.post(
+        "/api/runs", json={"kind": "sweep", "config": {"references": []}}
+    )
+    assert resp.status_code == 400
+
+
+def test_benchmark_mode_validation(client):
+    resp = client.post(
+        "/api/runs",
+        json={"kind": "benchmark", "config": {"mode": "telepathy"}},
+    )
+    assert resp.status_code == 400
+
+
+def test_abbreviation_solve_run(client, tmp_path, monkeypatch):
+    import voynich.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "RESULTS_DIR", tmp_path / "results")
+    resp = client.post(
+        "/api/runs",
+        json={
+            "kind": "solve",
+            "config": {
+                "currier_language": "A",
+                "reference": "english",
+                "hypothesis": "abbreviation",
+                "order": 3,
+                "bpe_merges": 10,
+                "iterations": 1200,
+                "restarts": 1,
+                "seed": 5,
+            },
+        },
+    )
+    assert resp.status_code == 201
+    run = _wait_for_run(client, resp.get_json()["id"])
+    assert run["status"] == "done", run.get("error")
+    result = run["result"]
+    assert result["scores"]["test_heldout"] > result["scores"]["random_key_floor"]
+    # Expansion keys decode each token to one or two letters
+    assert all(1 <= len(row["all"]) <= 2 for row in result["key"])
+    assert len(result["decoded_sample"]) > 0
+
+
+def test_strip_vowels():
+    from voynich.pipeline import strip_vowels
+
+    assert strip_vowels("in principio erat verbum") == "n prncp rt vrbm"
+    assert strip_vowels("aeiou x") == "x"
+
+
+def test_abjad_solve_config(client, tmp_path, monkeypatch):
+    import voynich.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "RESULTS_DIR", tmp_path / "results")
+    resp = client.post(
+        "/api/runs",
+        json={
+            "kind": "solve",
+            "config": {
+                "currier_language": "A",
+                "reference": "english",
+                "hypothesis": "simple",
+                "abjad": True,
+                "order": 3,
+                "bpe_merges": 5,
+                "iterations": 1000,
+                "restarts": 1,
+                "seed": 5,
+            },
+        },
+    )
+    assert resp.status_code == 201
+    run = _wait_for_run(client, resp.get_json()["id"])
+    assert run["status"] == "done", run.get("error")
+    assert run["result"]["meta"]["config"]["abjad"] is True
+
+
 def test_stop_endpoint(client):
     resp = client.post(
         "/api/runs",

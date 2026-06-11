@@ -14,14 +14,11 @@ Python 3.10+ required.
 python -m voynich setup
 ```
 
-Downloads into `data/` (~10 MB total):
-
-| File | Contents |
-|------|----------|
-| `interlinear_full_words.txt` | word-level Voynich transcription with folio/section/Currier/line metadata |
-| `reference_latin.txt` | De Imitatione Christi (~1420s) + De Bello Gallico, cleaned |
-| `reference_italian.txt` | La Divina Commedia, cleaned |
-| `reference_english.txt` | King James Bible, cleaned |
+Downloads into `data/` (~35 MB total): the word-level Voynich transcription
+(folio/section/Currier/line metadata) and 16 cleaned reference corpora
+spanning Italic, Romance, Germanic, Slavic, Hellenic, Uralic and Basque —
+see the table in [README.md](README.md). Greek and Cyrillic sources are
+transliterated one letter per letter during cleaning.
 
 You can also do this from the GUI's **Data** tab.
 
@@ -47,8 +44,15 @@ python -m voynich solve --language A --reference latin --hypothesis simple
 # The positional (line-start/body/line-end) hypothesis on Currier B
 python -m voynich solve --language B --hypothesis positional --iterations 100000
 
-# Known-answer validation
+# Scribal abbreviation (token -> 1-2 letters), vowels unwritten
+python -m voynich solve --reference latin --hypothesis abbreviation --abjad
+
+# Rank ALL 16 reference languages on one configuration
+python -m voynich sweep --language A --hypothesis simple --iterations 40000
+
+# Known-answer validation (substitution and abbreviation ciphers)
 python -m voynich benchmark --reference latin
+python -m voynich benchmark --reference latin --mode abbreviation
 ```
 
 ## 5. Reading a report

@@ -139,6 +139,113 @@ def key_table(key: np.ndarray, vocab: list[str]) -> list[dict]:
     return rows
 
 
+# ---- expansion (abbreviation-hypothesis) keys -----------------------------
+#
+# Medieval Latin manuscripts were written with heavy scribal abbreviation:
+# single signs stood for letter groups ('9' for 'con-/-us', the macron for a
+# following nasal, etc.).  If Voynichese tokens are such signs, a token must
+# be allowed to decode to MORE than one letter.  An expansion key maps each
+# token to one or two letters; this is also the leading family of
+# explanations for Voynichese's anomalously low character entropy.
+
+NO_CHAR = -1
+
+
+def random_expansion_key(
+    n_tokens: int, rng: np.random.Generator, p_second: float = 0.0
+) -> np.ndarray:
+    """Random expansion key of shape (n_tokens, 2).  Column 0 is a letter;
+    column 1 is a letter with probability p_second, else NO_CHAR.  The
+    space token (last index) is pinned to a bare space."""
+    key = np.empty((n_tokens, 2), dtype=np.int64)
+    key[:, 0] = rng.integers(0, A - 1, size=n_tokens)
+    key[:, 1] = np.where(
+        rng.random(n_tokens) < p_second,
+        rng.integers(0, A - 1, size=n_tokens),
+        NO_CHAR,
+    )
+    key[n_tokens - 1] = (SPACE_ID, NO_CHAR)
+    return key
+
+
+def expand_stream(key: np.ndarray, token_stream: np.ndarray) -> np.ndarray:
+    """Decode a token stream under an expansion key: each position emits
+    one char, plus a second where the key defines one."""
+    toks = token_stream.astype(np.int64)
+    first = key[toks, 0]
+    second = key[toks, 1]
+    has2 = second != NO_CHAR
+    n = len(toks)
+    extra = np.cumsum(has2)
+    pos = np.arange(n) + extra - has2  # output index of each first char
+    out = np.empty(n + int(extra[-1] if n else 0), dtype=np.int64)
+    out[pos] = first
+    out[pos[has2] + 1] = second[has2]
+    return out
+
+
+class ExpansionScorer:
+    """Scores expansion keys by decoding the full stream and scoring it
+    under the language model.  Variable-length output rules out the
+    NgramView compression, so this is O(corpus) per call — still a few
+    milliseconds thanks to vectorization.
+
+    The search objective is total log-probability divided by the (fixed)
+    number of tokens.  Normalizing per OUTPUT char instead would reward
+    degenerate keys that expand every token into high-probability filler
+    ('rerere...'): padding raises the per-char average for free, whereas
+    per-token it costs exactly the bits the extra letters consume."""
+
+    def __init__(self, corpus: EncodedCorpus, lm):
+        self.token_stream = corpus.token_stream.astype(np.int64)
+        self.n_positions = len(self.token_stream)
+        self.lm = lm
+
+    def score(self, key: np.ndarray) -> float:
+        """Search objective: bits per token (higher is better)."""
+        out = expand_stream(key, self.token_stream)
+        total = float(self.lm.logp[self.lm.ngram_indices(out)].sum())
+        return total / self.n_positions
+
+    def per_char(self, key: np.ndarray) -> float:
+        """Reporting metric: mean bits per decoded character, comparable
+        with the plain-substitution scores and corpus anchors."""
+        return self.lm.score_ids(expand_stream(key, self.token_stream))
+
+
+def expansion_strings(key: np.ndarray, vocab: list[str]) -> dict[str, str]:
+    """token -> decoded letter string ('' never occurs; 1 or 2 letters)."""
+    out = {}
+    for tok_id, tok in enumerate(vocab):
+        s = ALPHABET[key[tok_id, 0]]
+        if key[tok_id, 1] != NO_CHAR:
+            s += ALPHABET[key[tok_id, 1]]
+        out[tok] = s
+    return out
+
+
+def decode_lines_expanded(
+    key: np.ndarray,
+    lines: list[list[list[str]]],
+    vocab: list[str],
+    max_lines: int | None = None,
+) -> list[str]:
+    """Human-readable decoding of tokenized lines under an expansion key."""
+    strings = expansion_strings(key, vocab)
+    out = []
+    for line in lines[:max_lines]:
+        words = []
+        for word in line:
+            words.append("".join(strings.get(tok, "") for tok in word))
+        out.append(" ".join(words))
+    return out
+
+
+def expansion_key_table(key: np.ndarray, vocab: list[str]) -> list[dict]:
+    strings = expansion_strings(key, vocab)
+    return [{"token": tok, "all": strings[tok]} for tok in vocab]
+
+
 class NgramView:
     """Compressed n-gram view of a (token_stream, state_stream) pair.
 

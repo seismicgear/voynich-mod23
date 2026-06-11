@@ -21,28 +21,58 @@ it**, and this one doesn't. What it does is make decipherment hypotheses
 *testable and falsifiable*:
 
 1. **A hypothesis is a key family** — a mapping from EVA glyph tokens to
-   letters of a target language, either one global key (*simple
-   substitution*) or three position-dependent keys (*line-start / body /
-   line-end*).
-2. **Candidates are scored honestly** — by the mean log-probability of the
+   letters of a target language: one global key (*simple substitution*),
+   three position-dependent keys (*positional*), or expansions of one token
+   to 1–2 letters (*abbreviation* — the scribal-abbreviation theory, the
+   leading family of explanations for Voynichese's anomalously low entropy).
+   Any of them can also be scored against consonant skeletons (*abjad* —
+   the vowels-unwritten hypothesis behind the best published result).
+2. **Candidates are scored honestly** — by the log-probability of the
    decoded text under a smoothed character n-gram model trained on a real
    corpus. The Latin reference is built on Thomas à Kempis' *De Imitatione
    Christi* (~1420s), contemporary with the manuscript's 1404–1438 carbon
-   dating.
+   dating; Froissart's *Chroniques* (Middle French) and Leizarraga's Basque
+   New Testament anchor other families to the right era where possible.
 3. **The search is validated** — the benchmark mode encrypts held-out
-   reference text with a random substitution and checks the annealer recovers
-   it. It does, routinely at **100% letter accuracy in seconds**. So when the
-   same machinery fails on Voynichese, that is evidence about the text, not
-   about the solver.
+   reference text with a random substitution (or a synthetic abbreviation
+   cipher) and checks the annealer recovers it: **100% letter accuracy in
+   seconds** for substitution, 75–93% for the harder abbreviation case. So
+   when the same machinery fails on Voynichese, that is evidence about the
+   text, not about the solver.
 4. **Results are anchored** — every run reports its held-out score between a
    *random-key floor* (chance) and a *reference-language ceiling* (what real
    text scores), as "gap closed". Training and validation use disjoint
    alternating lines, so the optimizer cannot simply memorize.
 
-The reproducible finding — consistent with the published literature — is that
-no simple or positional substitution into Latin, Italian, or English turns
-Voynichese into language, even though its rigid word structure lets an
-optimizer close much of the statistical gap. Negative results are results.
+The reproducible finding — consistent with the published literature — is
+that no substitution-family decoding into any of the 16 reference languages
+turns Voynichese into language, even though its rigid word structure lets an
+optimizer close much of the statistical gap. Negative results are results;
+[ANALYSIS.md](ANALYSIS.md) lays out what they imply and what would actually
+settle the question.
+
+## Reference languages
+
+Sixteen corpora across the language families plausibly present in
+15th-century Europe, each labelled with its period in the GUI:
+
+| Family | References |
+|--------|------------|
+| Italic | Latin — *De Imitatione Christi* (~1420s) + *De Bello Gallico* |
+| Romance | Italian — Dante (c. 1320) · Middle French — Froissart, *Chroniques* (c. 1370–1400) · Spanish — *Don Quijote* (1605) · Portuguese — *Os Lusíadas* (1572) · Catalan (19th c. literary) |
+| Germanic | English — KJV (1611) · German — Luther Bible tradition · Dutch — Bible |
+| Slavic | Czech — *Bible kralická* (1613) · Polish — *Pan Tadeusz* (1834) · Russian — Synodal Bible (1876) |
+| Hellenic | Greek — Koine New Testament (the Byzantine standard) |
+| Uralic | Hungarian — Jókai (1872) · Finnish — *Kalevala* (1849) |
+| Isolate | Basque — Leizarraga New Testament (1571) |
+
+Greek and Cyrillic are transliterated **one letter per letter** (θ→q, ч→q;
+tables in `corpus.py`) — multi-letter romanizations like θ→"th" would
+smuggle fake digraph statistics into the language models.
+
+**Sweep mode** runs one configuration against all 16 references and ranks
+them by gap closed — the one-click answer to "which language fits best, and
+does any of them actually fit?".
 
 ---
 
@@ -67,7 +97,9 @@ optimizer close much of the statistical gap. Negative results are results.
 ```bash
 python -m voynich solve --language A --reference latin --hypothesis simple \
                         --iterations 60000 --restarts 3
-python -m voynich benchmark --reference latin --cipher-chars 4000
+python -m voynich solve --reference latin --hypothesis abbreviation --abjad
+python -m voynich sweep --language A --hypothesis simple        # all 16 languages, ranked
+python -m voynich benchmark --reference latin --mode abbreviation
 python -m voynich setup --force
 ```
 
@@ -108,28 +140,48 @@ Implementation notes:
   complete, so lines aren't silently duplicated (a bug in earlier versions
   of this repo).
 
-## Baseline results
+## Baseline results: the 16-language sweep
 
-Full-budget runs (60,000 iterations × 3 restarts, n-gram order 4, seed 42)
-on the real manuscript. Scores are mean bits/char under the reference LM;
-*gap closed* locates the held-out score between the random-key floor (0%)
-and the real-language ceiling (100%).
+`python -m voynich sweep --language A --seed 42` (simple substitution,
+40,000 iterations × 2 restarts, order 4). *Gap closed* locates the held-out
+score between the random-key floor (0%) and the real-language ceiling
+(100%); the decoded samples are held-out lines the optimizer never saw.
 
-| Currier | Reference | Hypothesis  | Held-out | Floor   | Ceiling | Gap closed | Decoded sample (held-out) |
-|---------|-----------|-------------|----------|---------|---------|------------|---------------------------|
-| A       | Latin     | simple      | −4.07    | −10.08  | −2.30   | 77.2%      | `ttis et este atet a et t eta` |
-| A       | Latin     | positional  | −4.07    | −10.18  | −2.30   | 77.5%      | `eere et este atet a et t tus` |
-| B       | Latin     | simple      | −3.97    | −10.04  | −2.30   | 78.5%      | `et ste tet et tet set e tet e tt` |
-| A       | Italian   | simple      | −3.86    | −10.89  | −2.24   | 81.2%      | `iino mi mail aima e mi i mio` |
-| A       | English   | simple      | −4.93    | −11.44  | −2.02   | 69.1%      | `ssed an ansa esat i at s are` |
+| #  | Reference   | Gap closed | Decoded sample (held-out)      |
+|----|-------------|-----------:|--------------------------------|
+| 1  | Portuguese  | 82.6%      | `oora do dios aodo e do o dos` |
+| 2  | Russian     | 82.5%      | `aami na naai iana i na a nam` |
+| 3  | Catalan     | 82.0%      | `aara la llas sala a la a las` |
+| 4  | Spanish     | 81.5%      | `eelo la lees aela a la e los` |
+| 5  | Italian     | 80.8%      | `iino si sain aise e si i min` |
+| 6  | Finnish     | 80.0%      | `aana sa saan aasa a sa a san` |
+| 7  | Czech       | 79.5%      | `eeli se stes sese z se e sel` |
+| 8  | Dutch       | 79.1%      | `rren en eere enen u en n erd` |
+| 9  | Greek       | 75.3%      | `nnos en eina inen h en n ena` |
+| 10 | Middle French | 74.6%    | `iins si suis sisi a si i ses` |
+| 11 | Polish      | 74.0%      | `aada na niaz lana z na a nal` |
+| 12 | Latin       | 73.9%      | `eeum te taet seti a te e tem` |
+| 13 | Hungarian   | 73.4%      | `eere te ties tete s te e tet` |
+| 14 | German      | 72.9%      | `ssar an ansa anan s an n ast` |
+| 15 | Basque      | 69.8%      | `aari da duan cada o da a den` |
+| 16 | English     | 68.9%      | `ssed an ansa esat i an s are` |
 
-Read the samples: every configuration closes 70–80% of the statistical gap —
-and none of them is language. The optimizer finds letter assignments that
-mimic the reference language's n-gram statistics (note the convincing
-Italian-ish `mi`/`mio` function words) because Voynichese's word structure is
-rigid enough to support that, but the output never resolves into meaning. For
-calibration, the same solver at the same budget recovers 100% of a genuine
-substitution cipher. That contrast *is* the result.
+Three readings of this table:
+
+* **No language works.** Nothing crosses 85%, and every sample is
+  repetitive non-language. For calibration, the same solver at a smaller
+  budget recovers 100% of a genuine substitution cipher.
+* **The ranking itself is informative.** Vowel-rich, low-entropy
+  orthographies (Portuguese, Russian transliteration, Catalan, Spanish)
+  costume best — exactly what entropy arithmetic predicts, since
+  Voynichese's conditional entropy is far below any European language's.
+* **Richer hypotheses close more gap without becoming language.** Under
+  the *abbreviation* hypothesis (token → 1–2 letters, 50k × 3), Portuguese
+  reaches **86.2%** — past the naive threshold — while its sample
+  (`aara do dias sado e do a das`) remains unreadable. That is why the
+  verdict demands a parseable sample *and* reproducibility, not a score.
+  See [ANALYSIS.md](ANALYSIS.md) for the full argument and the road map
+  beyond substitution ciphers.
 
 ## Layout
 

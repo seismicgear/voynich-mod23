@@ -14,7 +14,7 @@ import traceback
 from datetime import datetime, timezone
 
 from .. import corpus
-from ..pipeline import save_report, solve_voynich
+from ..pipeline import save_report, solve_voynich, sweep_references
 from ..synthetic import run_benchmark
 
 MAX_HISTORY_POINTS = 600
@@ -51,6 +51,9 @@ class RunManager:
     def start_benchmark(self, config: dict) -> int:
         return self._start("benchmark", config)
 
+    def start_sweep(self, config: dict) -> int:
+        return self._start("sweep", config)
+
     # ---- internals -------------------------------------------------------
 
     def _start(self, kind: str, config: dict) -> int:
@@ -79,6 +82,10 @@ class RunManager:
                 run["progress"] = p
                 hist = run["history"]
                 step = p["restart"] * p["total_iterations"] + p["iteration"]
+                # In sweeps, offset by the sub-run so the chart shows the
+                # whole experiment end to end.
+                if "lang_index" in p:
+                    step += p["lang_index"] * p["total_iterations"] * p["restarts"]
                 hist.append([step, p["best_score"]])
                 if len(hist) > MAX_HISTORY_POINTS:
                     # Decimate to keep payloads small.
@@ -88,6 +95,17 @@ class RunManager:
             if run["kind"] == "solve":
                 report = solve_voynich(
                     run["config"],
+                    progress=on_progress,
+                    should_stop=run["stop_event"].is_set,
+                )
+                path = save_report(report)
+                report["saved_to"] = str(path)
+            elif run["kind"] == "sweep":
+                cfg = dict(run["config"])
+                references = cfg.pop("references", None)
+                report = sweep_references(
+                    cfg,
+                    references=references,
                     progress=on_progress,
                     should_stop=run["stop_event"].is_set,
                 )
@@ -103,6 +121,7 @@ class RunManager:
                     iterations=int(cfg.get("iterations", 20000)),
                     restarts=int(cfg.get("restarts", 2)),
                     seed=cfg.get("seed"),
+                    mode=cfg.get("mode", "substitution"),
                     progress=on_progress,
                     should_stop=run["stop_event"].is_set,
                 )

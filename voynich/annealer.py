@@ -153,6 +153,214 @@ def anneal(
     )
 
 
+def anneal_expansion(
+    scorer,
+    n_tokens: int,
+    iterations: int = 40_000,
+    restarts: int = 3,
+    t_start: float = 0.08,
+    t_end: float = 0.0008,
+    seed: int | None = None,
+    init_key: np.ndarray | None = None,
+    progress: Callable[[dict], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    progress_every: int = 500,
+) -> AnnealResult:
+    """Simulated annealing over expansion keys (token -> 1 or 2 letters).
+
+    Same schedule and bookkeeping as `anneal`, with a move set that can
+    grow, shrink and permute expansions:
+      - set the first letter of a token
+      - set or replace a token's second letter
+      - clear a token's second letter (back to a single-letter decode)
+      - swap the full expansions of two tokens
+
+    `init_key` (if given) seeds the first restart — staging from the best
+    plain-substitution key is far better than a cold start, because the
+    coupled segmentation errors (which token absorbs which letter) are
+    hard to fix once the chain has cooled.  Later restarts stay random.
+    """
+    from .cipher import NO_CHAR, random_expansion_key
+
+    rng = np.random.default_rng(seed)
+    t0 = time.time()
+
+    global_best_key: np.ndarray | None = None
+    global_best_score = -math.inf
+    history: list[tuple[int, float]] = []
+    iters_done = 0
+    restarts_done = 0
+    stopped = False
+
+    movable = n_tokens - 1  # space (last index) is pinned
+    cooling = (t_end / t_start) ** (1.0 / max(iterations - 1, 1))
+
+    for restart in range(restarts):
+        if restart == 0 and init_key is not None:
+            key = init_key.copy()
+        else:
+            key = random_expansion_key(n_tokens, rng)
+        score = scorer.score(key)
+        best_key = key.copy()
+        best_score = score
+        temp = t_start
+
+        for it in range(iterations):
+            r = rng.random()
+            if r < 0.35:
+                tok = int(rng.integers(0, movable))
+                old = int(key[tok, 0])
+                new = int(rng.integers(0, A - 2))
+                if new >= old:
+                    new += 1
+                key[tok, 0] = new
+                undo = (tok, 0, old)
+            elif r < 0.65:
+                tok = int(rng.integers(0, movable))
+                old = int(key[tok, 1])
+                key[tok, 1] = int(rng.integers(0, A - 1))
+                undo = (tok, 1, old)
+            elif r < 0.80:
+                tok = int(rng.integers(0, movable))
+                old = int(key[tok, 1])
+                key[tok, 1] = NO_CHAR
+                undo = (tok, 1, old)
+            else:
+                a, b = rng.choice(movable, size=2, replace=False)
+                tmp = key[a].copy()
+                key[a] = key[b]
+                key[b] = tmp
+                undo = ("swap", int(a), int(b))
+
+            new_score = scorer.score(key)
+            delta = new_score - score
+            if delta >= 0 or rng.random() < math.exp(delta / temp):
+                score = new_score
+                if score > best_score:
+                    best_score = score
+                    best_key = key.copy()
+            else:
+                if undo[0] == "swap":
+                    _, a_, b_ = undo
+                    tmp = key[a_].copy()
+                    key[a_] = key[b_]
+                    key[b_] = tmp
+                else:
+                    tok_, col, old_ = undo
+                    key[tok_, col] = old_
+
+            temp *= cooling
+            iters_done += 1
+
+            if (it + 1) % progress_every == 0 or it == iterations - 1:
+                history.append((restart * iterations + it + 1, best_score))
+                if progress is not None:
+                    progress(
+                        {
+                            "restart": restart,
+                            "restarts": restarts,
+                            "iteration": it + 1,
+                            "total_iterations": iterations,
+                            "temperature": temp,
+                            "score": score,
+                            "best_score": max(best_score, global_best_score),
+                        }
+                    )
+                if should_stop is not None and should_stop():
+                    stopped = True
+                    break
+
+        if best_score > global_best_score:
+            global_best_score = best_score
+            global_best_key = best_key
+        restarts_done = restart + 1
+        if stopped:
+            break
+
+    if global_best_key is not None and not stopped:
+        if progress is not None:
+            progress(
+                {
+                    "restart": restarts_done - 1,
+                    "restarts": restarts,
+                    "iteration": iterations,
+                    "total_iterations": iterations,
+                    "temperature": t_end,
+                    "score": global_best_score,
+                    "best_score": global_best_score,
+                    "phase": "polishing",
+                }
+            )
+        global_best_key, global_best_score = polish_expansion(
+            scorer, global_best_key, should_stop=should_stop
+        )
+        history.append((restarts_done * iterations, global_best_score))
+
+    return AnnealResult(
+        best_key=global_best_key,
+        best_score=global_best_score,
+        history=history,
+        iterations_done=iters_done,
+        restarts_done=restarts_done,
+        stopped_early=stopped,
+        elapsed_sec=time.time() - t0,
+    )
+
+
+def polish_expansion(
+    scorer,
+    key: np.ndarray,
+    max_passes: int = 4,
+    should_stop: Callable[[], bool] | None = None,
+) -> tuple[np.ndarray, float]:
+    """Greedy coordinate descent on an expansion key: for each token try
+    every first letter, then every second-letter option (including none),
+    keeping improvements.  Deterministic finisher after annealing."""
+    from .cipher import NO_CHAR
+
+    key = key.copy()
+    best = scorer.score(key)
+    n_tokens = key.shape[0]
+    second_options = [NO_CHAR] + list(range(A - 1))
+
+    for _ in range(max_passes):
+        improved = False
+        for tok in range(n_tokens - 1):  # space (last index) stays pinned
+            if should_stop is not None and should_stop():
+                return key, best
+            for col, options in ((0, range(A - 1)), (1, second_options)):
+                orig = int(key[tok, col])
+                best_c = orig
+                for c in options:
+                    if c == orig:
+                        continue
+                    key[tok, col] = c
+                    s = scorer.score(key)
+                    if s > best:
+                        best, best_c, improved = s, c, True
+                key[tok, col] = best_c
+        if not improved:
+            break
+    return key, best
+
+
+def random_expansion_scores(
+    scorer,
+    n_tokens: int,
+    n_samples: int = 30,
+    seed: int | None = None,
+) -> list[float]:
+    """Chance floor for expansion-key searches (plain single-letter random
+    keys, so floors are comparable across hypotheses)."""
+    from .cipher import random_expansion_key
+
+    rng = np.random.default_rng(seed)
+    return [
+        scorer.score(random_expansion_key(n_tokens, rng))
+        for _ in range(n_samples)
+    ]
+
+
 def random_key_scores(
     view: NgramView,
     logp: np.ndarray,

@@ -1,10 +1,16 @@
 import numpy as np
+import pytest
 
 from voynich.cipher import (
+    NO_CHAR,
+    ExpansionScorer,
     NgramView,
     decode_lines,
+    decode_lines_expanded,
     decode_stream,
     encode_corpus,
+    expand_stream,
+    random_expansion_key,
     random_key,
 )
 from voynich.lm import ALPHABET, SPACE_ID, CharNgramModel
@@ -62,3 +68,54 @@ def test_random_key_pins_space():
     key = random_key(1, corpus.n_tokens, np.random.default_rng(0))
     assert key[0, corpus.space_token] == SPACE_ID
     assert (key[0, : corpus.space_token] != SPACE_ID).all()
+
+
+def _char(c):
+    return ALPHABET.index(c)
+
+
+def test_expand_stream_mixed_lengths():
+    corpus, lines, vocab = _toy_corpus()
+    key = np.full((corpus.n_tokens, 2), NO_CHAR, dtype=np.int64)
+    # d->'do', a->'a', i->'it', q->'q', o->'on', ch->'ch', e->'e'
+    expansions = {"d": "do", "a": "a", "i": "it", "q": "q", "o": "on",
+                  "ch": "ch", "e": "e"}
+    for tok_id, tok in enumerate(vocab):
+        s = expansions[tok]
+        key[tok_id, 0] = _char(s[0])
+        if len(s) == 2:
+            key[tok_id, 1] = _char(s[1])
+    key[corpus.space_token] = (SPACE_ID, NO_CHAR)
+
+    out = "".join(ALPHABET[i] for i in expand_stream(key, corpus.token_stream))
+    # line 1: [d a i][q o]; line 2: [ch e d][d a][o]
+    assert out == "doait qon chedo doa on"
+    rendered = decode_lines_expanded(key, lines, vocab)
+    assert rendered == ["doait qon", "chedo doa on"]
+
+
+def test_expansion_scorer_objective_and_per_char(english_text):
+    corpus, _, _ = _toy_corpus()
+    lm = CharNgramModel(order=3).fit(english_text)
+    scorer = ExpansionScorer(corpus, lm)
+    rng = np.random.default_rng(11)
+    for _ in range(3):
+        key = random_expansion_key(corpus.n_tokens, rng, p_second=0.5)
+        out = expand_stream(key, corpus.token_stream)
+        per_char = lm.score_ids(out)
+        objective = per_char * len(out) / len(corpus.token_stream)
+        assert scorer.per_char(key) == pytest.approx(per_char)
+        assert scorer.score(key) == pytest.approx(objective)
+
+
+def test_expansion_objective_penalizes_padding(english_text):
+    """The per-token objective must charge for added letters; otherwise
+    degenerate filler expansions win (the 'rerere' failure mode)."""
+    corpus, _, _ = _toy_corpus()
+    lm = CharNgramModel(order=3).fit(english_text)
+    scorer = ExpansionScorer(corpus, lm)
+    key = random_expansion_key(corpus.n_tokens, np.random.default_rng(0))
+    padded = key.copy()
+    padded[: corpus.space_token, 1] = _char("e")  # pad everything with 'e'
+    # Per-token, padding can only help if the added letters pay their way.
+    assert scorer.score(padded) < scorer.score(key) + 1.0

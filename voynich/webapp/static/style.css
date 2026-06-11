@@ -65,6 +65,8 @@ button.primary { background: var(--accent); color: #1b1610; border-color: var(--
 button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 button:disabled { opacity: 0.5; cursor: default; }
 .hint { color: var(--muted); font-size: 12.5px; }
+label.check { flex-direction: row; align-items: center; gap: 8px; margin-top: 18px; }
+label.check input { width: 16px; height: 16px; }
 
 .datalist { list-style: none; padding: 0; }
 .datalist li { padding: 6px 0; border-bottom: 1px dotted var(--border); }

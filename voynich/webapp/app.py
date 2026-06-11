@@ -24,7 +24,8 @@ def create_app() -> Flask:
         return render_template(
             "index.html",
             sections=corpus.SECTIONS,
-            references=list(corpus.REFERENCE_SOURCES),
+            catalog=corpus.reference_catalog(),
+            n_references=len(corpus.REFERENCE_SOURCES),
             defaults=DEFAULT_CONFIG,
         )
 
@@ -76,6 +77,8 @@ def create_app() -> Flask:
             run_id = manager.start_solve(config)
         elif kind == "benchmark":
             run_id = manager.start_benchmark(config)
+        elif kind == "sweep":
+            run_id = manager.start_sweep(config)
         else:
             return jsonify({"error": f"unknown run kind: {kind}"}), 400
         return jsonify({"id": run_id}), 201
@@ -96,19 +99,23 @@ def create_app() -> Flask:
 
 def _clean_config(kind: str, raw: dict) -> dict:
     """Validate and coerce user-supplied run config."""
+    from ..pipeline import HYPOTHESES
+
     cfg: dict = {}
     seed = raw.get("seed")
     cfg["seed"] = int(seed) if seed not in (None, "") else None
-    cfg["reference"] = str(raw.get("reference", "latin"))
-    if cfg["reference"] not in corpus.REFERENCE_SOURCES:
-        raise ValueError(f"unknown reference: {cfg['reference']}")
     cfg["order"] = int(raw.get("order", 4))
     if cfg["order"] not in (3, 4):
         raise ValueError("order must be 3 or 4")
     cfg["iterations"] = max(100, min(int(raw.get("iterations", 60000)), 2_000_000))
     cfg["restarts"] = max(1, min(int(raw.get("restarts", 3)), 20))
 
-    if kind == "solve":
+    if kind != "sweep":
+        cfg["reference"] = str(raw.get("reference", "latin"))
+        if cfg["reference"] not in corpus.REFERENCE_SOURCES:
+            raise ValueError(f"unknown reference: {cfg['reference']}")
+
+    if kind in ("solve", "sweep"):
         lang = str(raw.get("currier_language", "A"))
         if lang not in ("A", "B", "all"):
             raise ValueError("currier_language must be A, B or all")
@@ -118,12 +125,28 @@ def _clean_config(kind: str, raw: dict) -> dict:
             raise ValueError(f"unknown section: {section}")
         cfg["section"] = section
         hyp = str(raw.get("hypothesis", "simple"))
-        if hyp not in ("simple", "positional"):
-            raise ValueError("hypothesis must be simple or positional")
+        if hyp not in HYPOTHESES:
+            raise ValueError(f"hypothesis must be one of {HYPOTHESES}")
         cfg["hypothesis"] = hyp
+        cfg["abjad"] = bool(raw.get("abjad", False))
         cfg["bpe_merges"] = max(0, min(int(raw.get("bpe_merges", 30)), 200))
-    else:
+
+    if kind == "sweep":
+        refs = raw.get("references")
+        if refs is not None:
+            if not isinstance(refs, list) or not refs:
+                raise ValueError("references must be a non-empty list")
+            for r in refs:
+                if r not in corpus.REFERENCE_SOURCES:
+                    raise ValueError(f"unknown reference: {r}")
+            cfg["references"] = [str(r) for r in refs]
+
+    if kind == "benchmark":
         cfg["cipher_chars"] = max(500, min(int(raw.get("cipher_chars", 4000)), 50_000))
+        mode = str(raw.get("mode", "substitution"))
+        if mode not in ("substitution", "abbreviation"):
+            raise ValueError("mode must be substitution or abbreviation")
+        cfg["mode"] = mode
     return cfg
 
 
