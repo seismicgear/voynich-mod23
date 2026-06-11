@@ -1,2 +1,4 @@
-numpy
-matplotlib
+numpy>=1.24
+flask>=3.0
+matplotlib>=3.7    # legacy experiment plots only
+pytest>=7.0

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voynich Decipherment Workbench</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <div>
+    <h1>Voynich Decipherment Workbench</h1>
+    <p class="sub">MCMC simulated annealing over substitution-key hypotheses, scored by reference-language n-gram models</p>
+  </div>
+  <div id="data-pill" class="pill">checking data…</div>
+</header>
+
+<nav id="tabs">
+  <button class="tab active" data-tab="solve">Solve</button>
+  <button class="tab" data-tab="benchmark">Validate solver</button>
+  <button class="tab" data-tab="data">Data</button>
+  <button class="tab" data-tab="about">About</button>
+</nav>
+
+<main>
+  <!-- ============ SOLVE ============ -->
+  <section id="tab-solve" class="tabpane active">
+    <div class="card">
+      <h2>Run a decipherment attempt</h2>
+      <form id="solve-form" class="grid">
+        <label>Currier language
+          <select name="currier_language">
+            <option value="A" selected>A (herbal-heavy, older hand)</option>
+            <option value="B">B (biological/recipes)</option>
+            <option value="all">Both</option>
+          </select>
+        </label>
+        <label>Section
+          <select name="section">
+            <option value="">All sections</option>
+            {% for code, name in sections.items() %}
+            <option value="{{ code }}">{{ name }} ({{ code }})</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Reference language
+          <select name="reference">
+            {% for ref in references %}
+            <option value="{{ ref }}" {% if ref == 'latin' %}selected{% endif %}>{{ ref }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Hypothesis
+          <select name="hypothesis">
+            <option value="simple" selected>Simple substitution (token &rarr; letter)</option>
+            <option value="positional">Positional (line-start / body / line-end keys)</option>
+          </select>
+        </label>
+        <label>n-gram order
+          <select name="order"><option>3</option><option selected>4</option></select>
+        </label>
+        <label>BPE merges <input name="bpe_merges" type="number" value="30" min="0" max="200"></label>
+        <label>Iterations / restart <input name="iterations" type="number" value="60000" min="100" max="2000000"></label>
+        <label>Restarts <input name="restarts" type="number" value="3" min="1" max="20"></label>
+        <label>Seed (optional) <input name="seed" type="number" placeholder="random"></label>
+      </form>
+      <button id="start-solve" class="primary">Start solve run</button>
+      <p class="hint">Trains on even-numbered lines, validates on held-out odd lines. The verdict
+      compares the held-out score against a random-key floor and a real-language ceiling.</p>
+    </div>
+  </section>
+
+  <!-- ============ BENCHMARK ============ -->
+  <section id="tab-benchmark" class="tabpane">
+    <div class="card">
+      <h2>Validate the solver on a cipher with a known answer</h2>
+      <p>Encrypts a held-out slice of the reference corpus with a random substitution and checks
+      whether the annealer recovers the plaintext. This is the proof that the machinery can solve
+      what is solvable.</p>
+      <form id="bench-form" class="grid">
+        <label>Reference language
+          <select name="reference">
+            {% for ref in references %}
+            <option value="{{ ref }}" {% if ref == 'english' %}selected{% endif %}>{{ ref }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Cipher length (chars) <input name="cipher_chars" type="number" value="4000" min="500" max="50000"></label>
+        <label>n-gram order
+          <select name="order"><option>3</option><option selected>4</option></select>
+        </label>
+        <label>Iterations / restart <input name="iterations" type="number" value="20000" min="100" max="2000000"></label>
+        <label>Restarts <input name="restarts" type="number" value="2" min="1" max="20"></label>
+        <label>Seed (optional) <input name="seed" type="number" placeholder="random"></label>
+      </form>
+      <button id="start-bench" class="primary">Start benchmark</button>
+    </div>
+  </section>
+
+  <!-- ============ DATA ============ -->
+  <section id="tab-data" class="tabpane">
+    <div class="card">
+      <h2>Datasets</h2>
+      <ul id="data-list" class="datalist"></ul>
+      <button id="download-data" class="primary">Download / refresh all datasets</button>
+      <p class="hint">Voynich text: word-level interlinear transcription (Takahashi line),
+      via the chirila/Voynich-public corpus. References: De Imitatione Christi + De Bello Gallico
+      (Latin), La Divina Commedia (Italian), King James Bible (English).</p>
+    </div>
+  </section>
+
+  <!-- ============ ABOUT ============ -->
+  <section id="tab-about" class="tabpane">
+    <div class="card prose">
+      <h2>What this tool can and cannot claim</h2>
+      <p>The Voynich Manuscript (Beinecke MS 408) is undeciphered. No software can promise to
+      solve it; anyone claiming otherwise is selling something. What this workbench does is make
+      decipherment <em>hypotheses</em> testable and falsifiable:</p>
+      <ul>
+        <li>A hypothesis is a family of substitution keys (simple or position-dependent) from EVA
+        glyph tokens to letters of a target language.</li>
+        <li>Candidate keys are scored by how probable the decoded text is under a character
+        n-gram model of a real corpus — medieval Latin contemporary with the manuscript's
+        1404–1438 carbon dating, 14th-century Italian, or early-modern English.</li>
+        <li>Simulated annealing searches the key space; held-out validation on alternating lines
+        guards against the optimizer simply memorising the training text.</li>
+        <li>The benchmark tab proves the search machinery recovers genuine substitution ciphers
+        (typically 100% of letters within seconds) — so a failure on Voynichese is evidence about
+        the text, not about the solver.</li>
+      </ul>
+      <p>The consistent scientific finding — reproduced by this tool — is that no simple or
+      positional substitution into Latin, Italian or English makes Voynichese read as language,
+      even though its rigid word structure lets optimizers close much of the statistical gap.
+      Negative results here are real results.</p>
+    </div>
+  </section>
+
+  <!-- ============ RUNS ============ -->
+  <section class="card" id="runs-card">
+    <h2>Runs</h2>
+    <div id="runs-list" class="runslist"><p class="hint">No runs yet.</p></div>
+  </section>
+
+  <section class="card hidden" id="run-detail">
+    <div class="detail-header">
+      <h2 id="detail-title">Run</h2>
+      <div>
+        <button id="stop-run" class="danger hidden">Stop</button>
+        <button id="close-detail">Close</button>
+      </div>
+    </div>
+    <div id="detail-progress">
+      <div class="bar"><div id="bar-fill"></div></div>
+      <div id="progress-text" class="hint"></div>
+    </div>
+    <canvas id="chart" width="900" height="260"></canvas>
+    <div id="detail-body"></div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

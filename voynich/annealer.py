@@ -1,0 +1,169 @@
+"""
+annealer.py — simulated annealing over substitution keys.
+
+Search state: an int key of shape (n_states, n_tokens) mapping each
+glyph token (per positional state) to a plaintext letter.  Proposals
+either reassign one token to a new letter or swap the letters of two
+tokens.  Reassignment matters because good keys are many-to-one (the EVA
+token inventory is larger than the target alphabet); swap-only search
+cannot change which letters are over- or under-represented.
+
+The objective is the mean log2 probability per character of the decoded
+text under a reference-language n-gram model, evaluated exactly via the
+compressed NgramView.  Acceptance follows the Metropolis criterion with
+a geometric cooling schedule, and the whole search is repeated from
+independent random starts (restarts), keeping the global best.
+"""
+
+from __future__ import annotations
+
+import math
+import time
+from dataclasses import dataclass, field
+from typing import Callable
+
+import numpy as np
+
+from .cipher import NgramView, random_key
+from .lm import A
+
+
+@dataclass
+class AnnealResult:
+    best_key: np.ndarray
+    best_score: float
+    history: list[tuple[int, float]] = field(default_factory=list)
+    iterations_done: int = 0
+    restarts_done: int = 0
+    stopped_early: bool = False
+    elapsed_sec: float = 0.0
+
+
+def anneal(
+    view: NgramView,
+    logp: np.ndarray,
+    n_states: int,
+    n_tokens: int,
+    iterations: int = 60_000,
+    restarts: int = 3,
+    t_start: float = 0.08,
+    t_end: float = 0.0008,
+    p_swap: float = 0.5,
+    seed: int | None = None,
+    progress: Callable[[dict], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    progress_every: int = 500,
+) -> AnnealResult:
+    """Run simulated annealing; returns the best key found across restarts.
+
+    `progress` (if given) is called every `progress_every` iterations with
+    a dict: restart, iteration, total_iterations, temperature, score,
+    best_score.  `should_stop` is polled at the same cadence; returning
+    True aborts cleanly with the best result so far.
+    """
+    rng = np.random.default_rng(seed)
+    t0 = time.time()
+
+    global_best_key: np.ndarray | None = None
+    global_best_score = -math.inf
+    history: list[tuple[int, float]] = []
+    iters_done = 0
+    restarts_done = 0
+    stopped = False
+
+    # Space is pinned; movable tokens are everything else.
+    movable = n_tokens - 1
+    cooling = (t_end / t_start) ** (1.0 / max(iterations - 1, 1))
+
+    for restart in range(restarts):
+        key = random_key(n_states, n_tokens, rng)
+        score = view.score(key, logp)
+        best_key = key.copy()
+        best_score = score
+        temp = t_start
+
+        for it in range(iterations):
+            state = int(rng.integers(0, n_states))
+            if rng.random() < p_swap:
+                a, b = rng.choice(movable, size=2, replace=False)
+                key[state, a], key[state, b] = key[state, b], key[state, a]
+                undo = ("swap", state, int(a), int(b))
+            else:
+                tok = int(rng.integers(0, movable))
+                old = int(key[state, tok])
+                # New letter uniform over the 25 letters != old; space
+                # (id 26) is unreachable since draws cap at 25.
+                new = int(rng.integers(0, A - 2))
+                if new >= old:
+                    new += 1
+                key[state, tok] = new
+                undo = ("set", state, tok, old)
+
+            new_score = view.score(key, logp)
+            delta = new_score - score
+            if delta >= 0 or rng.random() < math.exp(delta / temp):
+                score = new_score
+                if score > best_score:
+                    best_score = score
+                    best_key = key.copy()
+            else:
+                if undo[0] == "swap":
+                    _, s, a_, b_ = undo
+                    key[s, a_], key[s, b_] = key[s, b_], key[s, a_]
+                else:
+                    _, s, tok_, old_ = undo
+                    key[s, tok_] = old_
+
+            temp *= cooling
+            iters_done += 1
+
+            if (it + 1) % progress_every == 0 or it == iterations - 1:
+                history.append((restart * iterations + it + 1, best_score))
+                if progress is not None:
+                    progress(
+                        {
+                            "restart": restart,
+                            "restarts": restarts,
+                            "iteration": it + 1,
+                            "total_iterations": iterations,
+                            "temperature": temp,
+                            "score": score,
+                            "best_score": max(best_score, global_best_score),
+                        }
+                    )
+                if should_stop is not None and should_stop():
+                    stopped = True
+                    break
+
+        if best_score > global_best_score:
+            global_best_score = best_score
+            global_best_key = best_key
+        restarts_done = restart + 1
+        if stopped:
+            break
+
+    return AnnealResult(
+        best_key=global_best_key,
+        best_score=global_best_score,
+        history=history,
+        iterations_done=iters_done,
+        restarts_done=restarts_done,
+        stopped_early=stopped,
+        elapsed_sec=time.time() - t0,
+    )
+
+
+def random_key_scores(
+    view: NgramView,
+    logp: np.ndarray,
+    n_states: int,
+    n_tokens: int,
+    n_samples: int = 30,
+    seed: int | None = None,
+) -> list[float]:
+    """Scores of random keys — the chance floor a real solution must beat."""
+    rng = np.random.default_rng(seed)
+    return [
+        view.score(random_key(n_states, n_tokens, rng), logp)
+        for _ in range(n_samples)
+    ]
