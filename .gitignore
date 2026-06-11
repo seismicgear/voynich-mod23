@@ -6,3 +6,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+electron/node_modules/
+electron/dist-electron/
+squashfs-root/

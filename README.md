@@ -8,12 +8,20 @@ with known answers.
 
 ## Install
 
-**Desktop (Linux / Windows / macOS)** — download the build for your OS from
-the repository's GitHub Releases (produced by the `build-installers`
-workflow: a `.tar.gz` binary for Linux, a `.dmg` for macOS, and both a
-portable `.zip` and a `VoynichWorkbench-Setup.exe` installer for Windows).
-Run it; the workbench opens in your browser. Data downloads on first use
-into your user data directory.
+**Desktop (Linux / Windows / macOS)** — download the build for your OS
+from the repository's GitHub Releases (produced by the `build-installers`
+workflow). The desktop app is an Electron shell around the bundled Python
+engine: it opens in its own native window with no browser or Python
+required.
+
+| OS | Artifact |
+|----|----------|
+| Linux | `.AppImage` (desktop app) · `.tar.gz` (headless CLI binary) |
+| macOS | `.dmg` (desktop app) · `-cli.tar.gz` (headless CLI binary) |
+| Windows | `-Setup.exe` (installer with Start-menu/desktop shortcuts) · `-cli.zip` (CLI binary) |
+
+Data downloads on first use into your per-user application data
+directory.
 
 **With pip** (any OS with Python 3.10+):
 
@@ -31,8 +39,10 @@ python -m voynich gui       # open http://127.0.0.1:5000/
 ```
 
 Maintainers: tag a release (`git tag v3.2.0 && git push --tags`) or run the
-`build-installers` workflow manually — it builds, tests and smoke-runs the
-executable on all three OSes and attaches the artifacts.
+`build-installers` workflow manually — on each OS it runs the test suite,
+builds the PyInstaller engine, builds the Electron app around it, boots
+both and verifies the GUI responds (`--smoke`), then attaches the
+artifacts to the release.
 
 ---
 

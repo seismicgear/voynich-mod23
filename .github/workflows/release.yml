@@ -62,29 +62,63 @@ jobs:
           Stop-Process -Id $p.Id -Force
           if (-not $ok) { exit 1 }
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build desktop app (Electron)
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm install --no-audit --no-fund
+          npx electron-builder --publish never
+
+      - name: Smoke-test desktop app (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb
+          xvfb-run -a ./electron/dist-electron/linux-unpacked/voynich-workbench-desktop \
+            --smoke --no-sandbox
+
+      - name: Smoke-test desktop app (macos)
+        if: runner.os == 'macOS'
+        run: |
+          "./electron/dist-electron/mac-arm64/Voynich Workbench.app/Contents/MacOS/Voynich Workbench" --smoke
+
+      - name: Smoke-test desktop app (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = "electron\dist-electron\win-unpacked\Voynich Workbench.exe"
+          $p = Start-Process -PassThru -Wait -FilePath $exe -ArgumentList "--smoke"
+          if ($p.ExitCode -ne 0) { exit 1 }
+
       - name: Package (linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p out
           tar -czf out/${{ matrix.artifact }}.tar.gz -C dist VoynichWorkbench
+          cp "electron/dist-electron/Voynich Workbench-"*.AppImage \
+             out/${{ matrix.artifact }}.AppImage
 
       - name: Package (macos)
         if: runner.os == 'macOS'
         run: |
-          mkdir -p out dmgroot
-          cp dist/VoynichWorkbench dmgroot/
-          hdiutil create -volname "Voynich Workbench" -srcfolder dmgroot \
-            -ov -format UDZO out/${{ matrix.artifact }}.dmg
+          mkdir -p out
+          cp "electron/dist-electron/Voynich Workbench-"*.dmg \
+             out/${{ matrix.artifact }}.dmg
+          tar -czf out/${{ matrix.artifact }}-cli.tar.gz -C dist VoynichWorkbench
 
-      - name: Build installer (windows)
+      - name: Package (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install innosetup --no-progress -y
-          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" packaging\windows_installer.iss
           New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item dist\VoynichWorkbench-Setup.exe out\${{ matrix.artifact }}-Setup.exe
-          Compress-Archive -Path dist\VoynichWorkbench.exe -DestinationPath out\${{ matrix.artifact }}.zip
+          Copy-Item "electron\dist-electron\Voynich Workbench Setup *.exe" `
+            out\${{ matrix.artifact }}-Setup.exe
+          Compress-Archive -Path dist\VoynichWorkbench.exe `
+            -DestinationPath out\${{ matrix.artifact }}-cli.zip
 
       - uses: actions/upload-artifact@v4
         with:
