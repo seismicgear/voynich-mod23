@@ -34,6 +34,29 @@ def test_data_status(client):
     assert status["voynich"] is True
 
 
+def test_data_gating_is_per_run(client, offline_data_dir):
+    """A run must only require ITS OWN data files: a missing unrelated
+    reference must not block a benchmark against a present one."""
+    (offline_data_dir / "reference_basque.txt").unlink()
+
+    # Benchmark against a present reference: allowed.
+    resp = client.post(
+        "/api/runs",
+        json={"kind": "benchmark",
+              "config": {"reference": "english", "iterations": 200,
+                         "cipher_chars": 500, "restarts": 1, "order": 3}},
+    )
+    assert resp.status_code == 201
+
+    # Solve against the missing reference: clear 409 naming it.
+    resp = client.post(
+        "/api/runs",
+        json={"kind": "solve", "config": {"reference": "basque"}},
+    )
+    assert resp.status_code == 409
+    assert "basque" in resp.get_json()["error"]
+
+
 def test_run_validation_errors(client):
     resp = client.post("/api/runs", json={"kind": "solve", "config": {"reference": "klingon"}})
     assert resp.status_code == 400

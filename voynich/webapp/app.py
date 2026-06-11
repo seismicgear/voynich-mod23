@@ -67,12 +67,17 @@ def create_app() -> Flask:
         body = request.get_json(force=True) or {}
         kind = body.get("kind", "solve")
         config = body.get("config", {})
-        if not corpus.data_status()["ready"]:
-            return jsonify({"error": "Data not downloaded yet — use the Data tab."}), 409
         try:
             config = _clean_config(kind, config)
         except (ValueError, TypeError) as exc:
             return jsonify({"error": str(exc)}), 400
+        missing = _missing_data(kind, config)
+        if missing:
+            return jsonify({
+                "error": "Missing data for this run: "
+                + ", ".join(missing)
+                + " — download it from the Data tab."
+            }), 409
         if kind == "solve":
             run_id = manager.start_solve(config)
         elif kind == "benchmark":
@@ -97,6 +102,25 @@ def create_app() -> Flask:
         return jsonify({"ok": manager.stop(run_id)})
 
     return app
+
+
+def _missing_data(kind: str, cfg: dict) -> list[str]:
+    """Names of the data files THIS run needs that are absent.  A run
+    against one reference must not be blocked because an unrelated
+    corpus failed to download."""
+    missing = []
+    if kind in ("solve", "sweep", "diagnostics") and not corpus.voynich_path().exists():
+        missing.append("Voynich transcription")
+    if kind in ("solve", "benchmark"):
+        refs = [cfg["reference"]]
+    elif kind == "sweep":
+        refs = cfg.get("references") or list(corpus.REFERENCE_SOURCES)
+    else:  # diagnostics compares against these by default
+        refs = cfg.get("references", ["latin", "english"])
+    missing += [
+        f"reference '{r}'" for r in refs if not corpus.reference_path(r).exists()
+    ]
+    return missing
 
 
 def _clean_config(kind: str, raw: dict) -> dict:

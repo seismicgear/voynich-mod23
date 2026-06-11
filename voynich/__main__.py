@@ -187,7 +187,20 @@ def cmd_benchmark(args) -> int:
     print(f"elapsed           : {rep['elapsed_sec']:.1f}s")
     print(f"\ndecoded : {rep['decoded_preview'][:160]}")
     print(f"truth   : {rep['plaintext_preview'][:160]}")
-    return 0 if rep["accuracy"] > 0.9 else 1
+    # Expected recovery differs by mode (see the test suite); the exit
+    # code reflects each mode's documented floor, not a flat 90%.
+    floors = {
+        "substitution": 0.9,
+        "nulls": 0.85,
+        "abbreviation": 0.55,
+        "anagram": 0.6,
+        "nomenclator": 0.4,
+    }
+    floor = floors[args.mode]
+    ok = rep["accuracy"] >= floor
+    print(f"\n{'PASS' if ok else 'FAIL'}: accuracy {rep['accuracy']:.3f} "
+          f"vs {args.mode} floor {floor:.2f}")
+    return 0 if ok else 1
 
 
 def main(argv: list[str] | None = None) -> int:
