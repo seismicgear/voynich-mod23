@@ -59,7 +59,12 @@
             <option value="simple" selected>Simple substitution (token &rarr; letter)</option>
             <option value="positional">Positional (line-start / body / line-end keys)</option>
             <option value="abbreviation">Abbreviation (token &rarr; 1&ndash;2 letters)</option>
+            <option value="anagram">Anagram (letters unordered, dictionary scoring)</option>
           </select>
+        </label>
+        <label>Lock &amp; iterate rounds
+          <input name="lock_rounds" type="number" value="0" min="0" max="5"
+                 title="After each round, tokens supported by dictionary-matched words are frozen and the rest re-anneal (simple/anagram only)">
         </label>
         <label>n-gram order
           <select name="order"><option>3</option><option selected>4</option></select>
@@ -104,6 +109,7 @@
           <select name="mode">
             <option value="substitution" selected>Substitution (one glyph per letter)</option>
             <option value="abbreviation">Abbreviation (glyphs for letter pairs)</option>
+            <option value="anagram">Anagram (letters shuffled inside words)</option>
           </select>
         </label>
         <label>Cipher length (chars) <input name="cipher_chars" type="number" value="4000" min="500" max="50000"></label>

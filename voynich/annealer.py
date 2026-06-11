@@ -50,6 +50,7 @@ def anneal(
     t_end: float = 0.0008,
     p_swap: float = 0.5,
     seed: int | None = None,
+    locked_letters: np.ndarray | None = None,
     progress: Callable[[dict], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     progress_every: int = 500,
@@ -60,6 +61,9 @@ def anneal(
     a dict: restart, iteration, total_iterations, temperature, score,
     best_score.  `should_stop` is polled at the same cadence; returning
     True aborts cleanly with the best result so far.
+
+    `locked_letters` (length n_tokens, -1 = free) pins tokens to fixed
+    letters across every state and restart — the crib-locking mechanism.
     """
     rng = np.random.default_rng(seed)
     t0 = time.time()
@@ -71,12 +75,19 @@ def anneal(
     restarts_done = 0
     stopped = False
 
-    # Space is pinned; movable tokens are everything else.
-    movable = n_tokens - 1
+    # Space is pinned; movable tokens are everything else minus locks.
+    movable_idx = np.arange(n_tokens - 1)
+    if locked_letters is not None:
+        movable_idx = movable_idx[locked_letters[: n_tokens - 1] < 0]
+    if len(movable_idx) < 2:
+        raise ValueError("fewer than two unlocked tokens — nothing to search")
     cooling = (t_end / t_start) ** (1.0 / max(iterations - 1, 1))
 
     for restart in range(restarts):
         key = random_key(n_states, n_tokens, rng)
+        if locked_letters is not None:
+            pinned = locked_letters >= 0
+            key[:, pinned] = locked_letters[pinned]
         score = view.score(key, logp)
         best_key = key.copy()
         best_score = score
@@ -85,11 +96,11 @@ def anneal(
         for it in range(iterations):
             state = int(rng.integers(0, n_states))
             if rng.random() < p_swap:
-                a, b = rng.choice(movable, size=2, replace=False)
+                a, b = rng.choice(movable_idx, size=2, replace=False)
                 key[state, a], key[state, b] = key[state, b], key[state, a]
                 undo = ("swap", state, int(a), int(b))
             else:
-                tok = int(rng.integers(0, movable))
+                tok = int(movable_idx[rng.integers(0, len(movable_idx))])
                 old = int(key[state, tok])
                 # New letter uniform over the 25 letters != old; space
                 # (id 26) is unreachable since draws cap at 25.
@@ -305,6 +316,173 @@ def anneal_expansion(
         stopped_early=stopped,
         elapsed_sec=time.time() - t0,
     )
+
+
+def anneal_anagram(
+    scorer,
+    n_tokens: int,
+    iterations: int = 20_000,
+    restarts: int = 3,
+    t_start: float = 0.15,
+    t_end: float = 0.002,
+    p_swap: float = 0.5,
+    seed: int | None = None,
+    init_key: np.ndarray | None = None,
+    locked_letters: np.ndarray | None = None,
+    progress: Callable[[dict], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    progress_every: int = 500,
+) -> AnnealResult:
+    """Simulated annealing for the anagram hypothesis: a flat key (one
+    letter per token, no space entry) scored at the WORD level by an
+    incremental AnagramScorer.  Supports crib locking via
+    `locked_letters` (length n_tokens, -1 = free)."""
+    rng = np.random.default_rng(seed)
+    t0 = time.time()
+
+    global_best_key: np.ndarray | None = None
+    global_best_score = -math.inf
+    history: list[tuple[int, float]] = []
+    iters_done = 0
+    restarts_done = 0
+    stopped = False
+
+    movable_idx = np.arange(n_tokens)
+    if locked_letters is not None:
+        movable_idx = movable_idx[locked_letters < 0]
+    if len(movable_idx) < 2:
+        raise ValueError("fewer than two unlocked tokens — nothing to search")
+    cooling = (t_end / t_start) ** (1.0 / max(iterations - 1, 1))
+
+    for restart in range(restarts):
+        if restart == 0 and init_key is not None:
+            key = init_key.copy()
+        else:
+            key = rng.integers(0, A - 1, size=n_tokens, dtype=np.int64)
+        if locked_letters is not None:
+            pinned = locked_letters >= 0
+            key[pinned] = locked_letters[pinned]
+
+        score = scorer.reset(key)
+        best_key = key.copy()
+        best_score = score
+        temp = t_start
+
+        for it in range(iterations):
+            if rng.random() < p_swap:
+                a, b = (int(x) for x in rng.choice(movable_idx, size=2, replace=False))
+                key[a], key[b] = key[b], key[a]
+                changed = [a, b]
+                undo_key = ("swap", a, b)
+            else:
+                tok = int(movable_idx[rng.integers(0, len(movable_idx))])
+                old = int(key[tok])
+                new = int(rng.integers(0, A - 2))
+                if new >= old:
+                    new += 1
+                key[tok] = new
+                changed = [tok]
+                undo_key = ("set", tok, old)
+
+            undo_score = scorer.update(key, changed)
+            new_score = scorer.objective()
+            delta = new_score - score
+            if delta >= 0 or rng.random() < math.exp(delta / temp):
+                score = new_score
+                if score > best_score:
+                    best_score = score
+                    best_key = key.copy()
+            else:
+                scorer.revert(undo_score)
+                if undo_key[0] == "swap":
+                    _, a, b = undo_key
+                    key[a], key[b] = key[b], key[a]
+                else:
+                    _, tok, old = undo_key
+                    key[tok] = old
+
+            temp *= cooling
+            iters_done += 1
+
+            if (it + 1) % progress_every == 0 or it == iterations - 1:
+                history.append((restart * iterations + it + 1, best_score))
+                if progress is not None:
+                    progress(
+                        {
+                            "restart": restart,
+                            "restarts": restarts,
+                            "iteration": it + 1,
+                            "total_iterations": iterations,
+                            "temperature": temp,
+                            "score": score,
+                            "best_score": max(best_score, global_best_score),
+                        }
+                    )
+                if should_stop is not None and should_stop():
+                    stopped = True
+                    break
+
+        if best_score > global_best_score:
+            global_best_score = best_score
+            global_best_key = best_key
+        restarts_done = restart + 1
+        if stopped:
+            break
+
+    if global_best_key is not None and not stopped:
+        global_best_key, global_best_score = polish_anagram(
+            scorer, global_best_key, movable_idx, should_stop=should_stop
+        )
+        history.append((restarts_done * iterations, global_best_score))
+
+    return AnnealResult(
+        best_key=global_best_key,
+        best_score=global_best_score,
+        history=history,
+        iterations_done=iters_done,
+        restarts_done=restarts_done,
+        stopped_early=stopped,
+        elapsed_sec=time.time() - t0,
+    )
+
+
+def polish_anagram(
+    scorer,
+    key: np.ndarray,
+    movable_idx: np.ndarray,
+    max_passes: int = 4,
+    should_stop: Callable[[], bool] | None = None,
+) -> tuple[np.ndarray, float]:
+    """Greedy coordinate descent for anagram keys: every movable token
+    tries all 26 letters, keeping improvements, until a full pass changes
+    nothing.  Uses the scorer's incremental updates."""
+    key = key.copy()
+    best = scorer.reset(key)
+
+    for _ in range(max_passes):
+        improved = False
+        for tok in movable_idx:
+            if should_stop is not None and should_stop():
+                return key, best
+            tok = int(tok)
+            # Invariant: scorer always reflects `key`; rejected candidates
+            # are rolled back immediately, accepted ones become the new
+            # baseline for the remaining candidates.
+            best_c = int(key[tok])
+            for c in range(A - 1):
+                if c == best_c:
+                    continue
+                key[tok] = c
+                undo = scorer.update(key, [tok])
+                s = scorer.objective()
+                if s > best:
+                    best, best_c, improved = s, c, True
+                else:
+                    scorer.revert(undo)
+                    key[tok] = best_c
+        if not improved:
+            break
+    return key, best
 
 
 def polish_expansion(

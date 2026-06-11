@@ -56,6 +56,7 @@ def cmd_solve(args) -> int:
         "reference": args.reference,
         "hypothesis": args.hypothesis,
         "abjad": args.abjad,
+        "lock_rounds": args.lock_rounds,
         "order": args.order,
         "bpe_merges": args.bpe_merges,
         "iterations": args.iterations,
@@ -73,6 +74,9 @@ def cmd_solve(args) -> int:
     print(f"random-key floor: {s['random_key_floor']:.4f}")
     print(f"language ceiling: {s['reference_ceiling']:.4f}")
     print(f"gap closed      : {s['gap_closed'] * 100:.1f}%")
+    print(f"dict word match : {s['word_match_rate'] * 100:.1f}%")
+    for entry in report.get("locking", []):
+        print(f"  lock round {entry['round'] + 1}: {entry['locked_tokens']} tokens frozen")
     print(f"\n{report['verdict']}\n")
     print("Decoded held-out sample:")
     for row in report["decoded_sample"][:10]:
@@ -108,9 +112,10 @@ def cmd_sweep(args) -> int:
     path = save_report(report)
 
     print(f"\n=== Ranked results ===")
-    print(f"{'#':>2} {'gap':>7} {'held-out':>9} {'floor':>8} {'ceiling':>8}  reference")
+    print(f"{'#':>2} {'gap':>7} {'match':>7} {'held-out':>9} {'floor':>8} {'ceiling':>8}  reference")
     for i, row in enumerate(report["table"], 1):
-        print(f"{i:>2} {row['gap_closed'] * 100:6.1f}% {row['test_heldout']:9.3f} "
+        print(f"{i:>2} {row['gap_closed'] * 100:6.1f}% {row['word_match_rate'] * 100:6.1f}% "
+              f"{row['test_heldout']:9.3f} "
               f"{row['random_key_floor']:8.3f} {row['reference_ceiling']:8.3f}  {row['label']}")
         print(f"{'':19}sample: {row['sample'][:70]}")
     print(f"\n{report['note']}")
@@ -171,6 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--hypothesis", default="simple", choices=list(HYPOTHESES))
     p.add_argument("--abjad", action="store_true",
                    help="score against the reference's consonant skeleton")
+    p.add_argument("--lock-rounds", type=int, default=0,
+                   help="crib-locking rounds: freeze dictionary-supported "
+                        "tokens and re-anneal (simple/anagram)")
     p.add_argument("--order", type=int, default=4, choices=[3, 4])
     p.add_argument("--bpe-merges", type=int, default=30)
     p.add_argument("--iterations", type=int, default=60000)
@@ -196,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("benchmark", help="validate solver on a known cipher")
     p.add_argument("--reference", default="english", choices=references)
     p.add_argument("--mode", default="substitution",
-                   choices=["substitution", "abbreviation"])
+                   choices=["substitution", "abbreviation", "anagram"])
     p.add_argument("--cipher-chars", type=int, default=4000)
     p.add_argument("--order", type=int, default=4, choices=[3, 4])
     p.add_argument("--iterations", type=int, default=20000)

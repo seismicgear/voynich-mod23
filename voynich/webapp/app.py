@@ -99,7 +99,7 @@ def create_app() -> Flask:
 
 def _clean_config(kind: str, raw: dict) -> dict:
     """Validate and coerce user-supplied run config."""
-    from ..pipeline import HYPOTHESES
+    from ..pipeline import HYPOTHESES, LOCKABLE_HYPOTHESES
 
     cfg: dict = {}
     seed = raw.get("seed")
@@ -130,6 +130,11 @@ def _clean_config(kind: str, raw: dict) -> dict:
         cfg["hypothesis"] = hyp
         cfg["abjad"] = bool(raw.get("abjad", False))
         cfg["bpe_merges"] = max(0, min(int(raw.get("bpe_merges", 30)), 200))
+        cfg["lock_rounds"] = max(0, min(int(raw.get("lock_rounds", 0) or 0), 5))
+        if cfg["lock_rounds"] and hyp not in LOCKABLE_HYPOTHESES:
+            raise ValueError(
+                f"lock rounds require one of: {', '.join(LOCKABLE_HYPOTHESES)}"
+            )
 
     if kind == "sweep":
         refs = raw.get("references")
@@ -144,8 +149,8 @@ def _clean_config(kind: str, raw: dict) -> dict:
     if kind == "benchmark":
         cfg["cipher_chars"] = max(500, min(int(raw.get("cipher_chars", 4000)), 50_000))
         mode = str(raw.get("mode", "substitution"))
-        if mode not in ("substitution", "abbreviation"):
-            raise ValueError("mode must be substitution or abbreviation")
+        if mode not in ("substitution", "abbreviation", "anagram"):
+            raise ValueError("mode must be substitution, abbreviation or anagram")
         cfg["mode"] = mode
     return cfg
 

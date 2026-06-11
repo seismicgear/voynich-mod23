@@ -19,9 +19,17 @@ import collections
 
 from .annealer import (
     anneal,
+    anneal_anagram,
     anneal_expansion,
     random_expansion_scores,
     random_key_scores,
+)
+from .words import (
+    AnagramScorer,
+    WordDictionary,
+    WordTypes,
+    alphagram_text,
+    frequency_init_key,
 )
 from .cipher import (
     NO_CHAR,
@@ -163,6 +171,107 @@ def staged_expansion_init(
     return init
 
 
+def make_anagram_cipher(
+    plaintext: str, seed: int | None = None
+) -> tuple[list[list[list[int]]], list[str], np.ndarray, list[tuple[tuple, str]]]:
+    """Encrypt plaintext by (a) shuffling the letters inside every word
+    and (b) substituting each letter with a glyph.  Word boundaries
+    survive; letter order does not — the anagram hypothesis exactly.
+
+    Returns (tokenized_lines, vocab, true_key, occurrences) where
+    occurrences pairs each word occurrence's ciphertext type with the
+    original plaintext word."""
+    rng = np.random.default_rng(seed)
+    words = [w for w in plaintext.split() if w]
+
+    letters = sorted({ch for w in words for ch in w})
+    perm = rng.permutation(len(letters))
+    vocab = [f"g{j:02d}" for j in range(len(letters))]
+    letter_to_token = {letters[i]: int(perm[i]) for i in range(len(letters))}
+
+    lines: list[list[list[int]]] = []
+    occurrences: list[tuple[tuple, str]] = []
+    for i in range(0, len(words), 8):
+        line = []
+        for w in words[i : i + 8]:
+            shuffled = [w[j] for j in rng.permutation(len(w))]
+            toks = [letter_to_token[ch] for ch in shuffled]
+            line.append(toks)
+            occurrences.append((tuple(toks), w))
+        if line:
+            lines.append(line)
+
+    true_key = np.zeros(len(vocab), dtype=np.int64)
+    for ch, tok in letter_to_token.items():
+        true_key[tok] = ord(ch) - 97
+    return lines, vocab, true_key, occurrences
+
+
+def _run_anagram_benchmark(
+    lm_text: str,
+    sample: str,
+    iterations: int,
+    restarts: int,
+    seed: int | None,
+    progress,
+    should_stop,
+) -> dict:
+    lines, vocab, true_key, occurrences = make_anagram_cipher(sample, seed=seed)
+    dictionary = WordDictionary(lm_text)
+    word_types = WordTypes(lines)
+    alpha_lm = CharNgramModel(order=4).fit(alphagram_text(lm_text))
+    scorer = AnagramScorer(word_types, dictionary, alphagram_lm=alpha_lm)
+
+    result = anneal_anagram(
+        scorer,
+        n_tokens=len(vocab),
+        iterations=iterations,
+        restarts=restarts,
+        seed=seed,
+        init_key=frequency_init_key(word_types, dictionary),
+        progress=progress,
+        should_stop=should_stop,
+    )
+
+    # Accuracy: share of word occurrences whose matched dictionary word
+    # IS the original plaintext word.
+    matched, match_words = scorer.match_info(result.best_key)
+    type_index = {tuple(int(x) for x in t): i for i, t in enumerate(word_types.types)}
+    hits = 0
+    for toks, original in occurrences:
+        ti = type_index[toks]
+        if matched[ti] and match_words[ti] == original:
+            hits += 1
+    accuracy = hits / max(len(occurrences), 1)
+
+    rng = np.random.default_rng(seed)
+    rand_scores = [
+        scorer.score_key(rng.integers(0, 26, size=len(vocab), dtype=np.int64))
+        for _ in range(20)
+    ]
+    preview_words = []
+    truth_words = []
+    for toks, original in occurrences[:50]:
+        ti = type_index[toks]
+        preview_words.append(match_words[ti] if matched[ti] else "?" * len(toks))
+        truth_words.append(original)
+
+    return {
+        "mode": "anagram",
+        "accuracy": accuracy,
+        "best_score": result.best_score,
+        "true_key_score": scorer.score_key(true_key),
+        "random_key_score_mean": float(np.mean(rand_scores)),
+        "iterations_done": result.iterations_done,
+        "restarts_done": result.restarts_done,
+        "elapsed_sec": result.elapsed_sec,
+        "history": result.history,
+        "decoded_preview": " ".join(preview_words)[:300],
+        "plaintext_preview": " ".join(truth_words)[:300],
+        "cipher_letters": sum(len(t) for t, _ in occurrences),
+    }
+
+
 def _split_for_benchmark(text: str, cipher_chars: int) -> tuple[str, str]:
     cut = max(len(text) - cipher_chars - 1, len(text) // 2)
     lm_text = text[:cut]
@@ -188,8 +297,14 @@ def run_benchmark(
 
     mode 'substitution': one glyph per letter, solved with plain keys.
     mode 'abbreviation': frequent bigrams become single glyphs, solved
-    with expansion keys (token -> 1-2 letters)."""
+    with expansion keys (token -> 1-2 letters).
+    mode 'anagram': letters shuffled inside every word, solved with
+    word-level dictionary scoring."""
     lm_text, sample = _split_for_benchmark(text, cipher_chars)
+    if mode == "anagram":
+        return _run_anagram_benchmark(
+            lm_text, sample, iterations, restarts, seed, progress, should_stop
+        )
     lm = CharNgramModel(order=order).fit(lm_text)
 
     if mode == "abbreviation":

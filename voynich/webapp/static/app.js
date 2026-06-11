@@ -239,12 +239,13 @@ function renderResult(r) {
       `<div class="verdict">${escapeHtml(res.note)}</div>` +
       `<h3>Ranked results (${res.table.length} languages)</h3>
        <table><tr><th>#</th><th>reference</th><th>family</th><th>gap closed</th>
-       <th>held-out</th><th>floor</th><th>ceiling</th><th>decoded sample</th></tr>${res.table
+       <th>dict matches</th><th>held-out</th><th>floor</th><th>ceiling</th><th>decoded sample</th></tr>${res.table
          .map(
            (row, i) =>
              `<tr><td class="num">${i + 1}</td><td>${escapeHtml(row.label)}</td>
               <td>${escapeHtml(row.family)}</td>
               <td class="num"><b>${(row.gap_closed * 100).toFixed(1)}%</b></td>
+              <td class="num">${(row.word_match_rate * 100).toFixed(1)}%</td>
               <td class="num">${row.test_heldout.toFixed(3)}</td>
               <td class="num">${row.random_key_floor.toFixed(3)}</td>
               <td class="num">${row.reference_ceiling.toFixed(3)}</td>
@@ -279,6 +280,12 @@ function renderResult(r) {
   }
 
   const s = res.scores;
+  const lockNote =
+    res.locking && res.locking.length > 1
+      ? `<p class="hint">Crib locking: ${res.locking
+          .map((l) => `round ${l.round + 1} locked ${l.locked_tokens} tokens`)
+          .join(" · ")}</p>`
+      : "";
   el.innerHTML =
     scoreBoxes([
       ["held-out score", s.test_heldout.toFixed(4)],
@@ -286,7 +293,9 @@ function renderResult(r) {
       ["random-key floor", s.random_key_floor.toFixed(4)],
       ["language ceiling", s.reference_ceiling.toFixed(4)],
       ["gap closed", (s.gap_closed * 100).toFixed(1) + "%"],
+      ["dict word matches", (s.word_match_rate * 100).toFixed(1) + "%"],
     ]) +
+    lockNote +
     `<div class="verdict">${escapeHtml(res.verdict)}</div>` +
     `<h3>Decoded held-out sample</h3>
      <table><tr><th>folio.line</th><th>decoded</th></tr>${(res.decoded_sample || [])

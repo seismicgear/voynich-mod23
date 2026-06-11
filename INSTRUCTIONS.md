@@ -47,12 +47,16 @@ python -m voynich solve --language B --hypothesis positional --iterations 100000
 # Scribal abbreviation (token -> 1-2 letters), vowels unwritten
 python -m voynich solve --reference latin --hypothesis abbreviation --abjad
 
+# Anagram hypothesis (letters unordered inside words) with crib locking:
+# tokens supported by dictionary-matched words freeze between rounds
+python -m voynich solve --reference latin --hypothesis anagram --lock-rounds 3
+
 # Rank ALL 16 reference languages on one configuration
 python -m voynich sweep --language A --hypothesis simple --iterations 40000
 
-# Known-answer validation (substitution and abbreviation ciphers)
+# Known-answer validation (substitution, abbreviation, anagram ciphers)
 python -m voynich benchmark --reference latin
-python -m voynich benchmark --reference latin --mode abbreviation
+python -m voynich benchmark --reference latin --mode anagram
 ```
 
 ## 5. Reading a report
@@ -80,6 +84,13 @@ Interpretation, bluntly:
 
 A high train score with a much lower held-out score means the key memorized
 the training lines — the split exists precisely to expose that.
+
+Every report also carries a **dictionary word-match rate** for the decoded
+held-out text, split by word length. Short words (3–4 letters) match cheaply;
+**long words (≥5) are the hard currency** — real decipherments produce them,
+gamed objectives don't. If a run reports gap closed **above 100%** (possible
+under anagram scoring), the optimizer beat the objective, not the manuscript;
+the verdict text explains this whenever it happens.
 
 ## 6. Tests
 

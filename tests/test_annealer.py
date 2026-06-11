@@ -39,6 +39,22 @@ def test_solver_recovers_abbreviation_cipher(english_text):
     assert report["best_score"] > report["random_key_score_mean"] + 2.0
 
 
+def test_solver_recovers_anagram_cipher(english_text):
+    """The word-level solver must crack a cipher where letters are
+    shuffled inside every word — order statistics destroyed, multisets
+    intact. Frequency init + alphagram-LM gradient carry this."""
+    report = run_benchmark(
+        english_text,
+        cipher_chars=3000,
+        iterations=12000,
+        restarts=2,
+        seed=3,
+        mode="anagram",
+    )
+    assert report["accuracy"] >= 0.6
+    assert report["best_score"] > report["random_key_score_mean"] + 5.0
+
+
 def test_stop_flag_aborts_early(english_text):
     calls = {"n": 0}
 

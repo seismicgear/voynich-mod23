@@ -184,6 +184,48 @@ def test_abbreviation_solve_run(client, tmp_path, monkeypatch):
     assert len(result["decoded_sample"]) > 0
 
 
+def test_anagram_solve_with_lock_rounds(client, tmp_path, monkeypatch):
+    import voynich.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "RESULTS_DIR", tmp_path / "results")
+    resp = client.post(
+        "/api/runs",
+        json={
+            "kind": "solve",
+            "config": {
+                "currier_language": "A",
+                "reference": "english",
+                "hypothesis": "anagram",
+                "lock_rounds": 2,
+                "order": 3,
+                "bpe_merges": 10,
+                "iterations": 1500,
+                "restarts": 1,
+                "seed": 5,
+            },
+        },
+    )
+    assert resp.status_code == 201
+    run = _wait_for_run(client, resp.get_json()["id"])
+    assert run["status"] == "done", run.get("error")
+    result = run["result"]
+    assert "word_match_rate" in result["scores"]
+    assert "word_match_rate_long" in result["scores"]
+    assert len(result["locking"]) >= 1
+    assert all("locked_tokens" in entry for entry in result["locking"])
+
+
+def test_lock_rounds_validation(client):
+    resp = client.post(
+        "/api/runs",
+        json={
+            "kind": "solve",
+            "config": {"hypothesis": "positional", "lock_rounds": 2},
+        },
+    )
+    assert resp.status_code == 400
+
+
 def test_strip_vowels():
     from voynich.pipeline import strip_vowels
 

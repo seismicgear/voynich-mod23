@@ -35,9 +35,19 @@ import numpy as np
 from . import corpus as corpus_mod
 from .annealer import (
     anneal,
+    anneal_anagram,
     anneal_expansion,
     random_expansion_scores,
     random_key_scores,
+)
+from .words import (
+    AnagramScorer,
+    WordDictionary,
+    WordTypes,
+    alphagram_text,
+    evidence_locks,
+    frequency_init_key,
+    word_match_rate,
 )
 from .cipher import (
     ExpansionScorer,
@@ -56,7 +66,8 @@ from .tokenizer import EvaTokenizer
 
 RESULTS_DIR = pathlib.Path("results")
 
-HYPOTHESES = ("simple", "positional", "abbreviation")
+HYPOTHESES = ("simple", "positional", "abbreviation", "anagram")
+LOCKABLE_HYPOTHESES = ("simple", "anagram")
 
 DEFAULT_CONFIG = {
     "currier_language": "A",     # 'A', 'B' or 'all'
@@ -64,6 +75,7 @@ DEFAULT_CONFIG = {
     "reference": "latin",        # any key in corpus.REFERENCE_SOURCES
     "hypothesis": "simple",      # see HYPOTHESES
     "abjad": False,              # score against consonant skeletons
+    "lock_rounds": 0,            # crib-locking iterations (simple/anagram)
     "order": 4,
     "bpe_merges": 30,
     "iterations": 60_000,
@@ -128,13 +140,116 @@ def solve_voynich(
     train_corpus = encode_corpus(train_lines, vocab, n_states=n_states)
     test_corpus = encode_corpus(test_lines, vocab, n_states=n_states)
 
+    tok_to_id = {t: i for i, t in enumerate(vocab)}
+
+    def to_ids(token_lines):
+        return [[[tok_to_id[t] for t in w] for w in line] for line in token_lines]
+
+    dictionary = WordDictionary(ref_text)
+    lock_rounds = int(cfg.get("lock_rounds", 0) or 0)
+    if lock_rounds and hypothesis not in LOCKABLE_HYPOTHESES:
+        raise ValueError(
+            f"lock_rounds is only supported for {LOCKABLE_HYPOTHESES}"
+        )
+    locking_log: list[dict] = []
+
     # 4. Language model + anchors
     order = cfg["order"]
     lm = CharNgramModel(order=order).fit(ref_text)
     ceiling = reference_self_score(lm, ref_text)
 
     # 5/6. Search + held-out evaluation (per hypothesis family)
-    if hypothesis == "abbreviation":
+    if hypothesis == "anagram":
+        train_types = WordTypes(to_ids(train_lines))
+        test_types = WordTypes(to_ids(test_lines))
+        alpha_lm = CharNgramModel(order=order).fit(alphagram_text(ref_text))
+        train_scorer = AnagramScorer(train_types, dictionary, alphagram_lm=alpha_lm)
+        test_scorer = AnagramScorer(test_types, dictionary, alphagram_lm=alpha_lm)
+        n_tok = len(vocab)
+
+        init = frequency_init_key(train_types, dictionary, n_tokens=n_tok)
+        locked = None
+        for rnd in range(lock_rounds + 1):
+            result = anneal_anagram(
+                train_scorer,
+                n_tokens=n_tok,
+                iterations=cfg["iterations"],
+                restarts=cfg["restarts"],
+                seed=cfg["seed"],
+                init_key=init,
+                locked_letters=locked,
+                progress=progress,
+                should_stop=should_stop,
+            )
+            best_key = result.best_key
+            matched, _ = train_scorer.match_info(best_key, min_len=3)
+            lock_mask = evidence_locks(train_types, matched, n_tok)
+            new_locked = np.where(lock_mask, best_key, -1)
+            locking_log.append(
+                {
+                    "round": rnd,
+                    "locked_tokens": int(lock_mask.sum()),
+                    "train_score": result.best_score,
+                }
+            )
+            done = (
+                rnd == lock_rounds
+                or (result.stopped_early)
+                or (locked is not None and np.array_equal(new_locked, locked))
+            )
+            if done:
+                break
+            locked = new_locked
+            init = best_key.copy()
+
+        train_score = result.best_score
+        test_score = test_scorer.score_key(best_key)
+        rng = np.random.default_rng(cfg["seed"])
+        rand_scores = [
+            test_scorer.score_key(
+                rng.integers(0, 26, size=n_tok, dtype=np.int64)
+            )
+            for _ in range(30)
+        ]
+        # Word-level ceiling: what the reference corpus scores against its
+        # own dictionary (same units, bits per word token).
+        ceiling = dictionary.expected_word_score(ref_text)
+
+        # Decoded sample: matched words read as words, the rest as raw
+        # decoded letters in written order.
+        test_matched, test_words = test_scorer.match_info(best_key, min_len=1)
+        type_index = {
+            tuple(int(x) for x in t): i for i, t in enumerate(test_types.types)
+        }
+
+        def render_word(word_ids: list[int]) -> str:
+            ti = type_index.get(tuple(word_ids))
+            if ti is not None and test_matched[ti]:
+                return test_words[ti]
+            return "".join(ALPHABET[best_key[t]] for t in word_ids) + "?"
+
+        test_ids = to_ids(test_lines)
+        decoded_sample = [
+            " ".join(render_word(w) for w in line) for line in test_ids[:25]
+        ]
+        decoded_text = "\n".join(
+            " ".join(render_word(w) for w in line) for line in test_ids
+        )
+        def _sig_match_rate(min_len: int) -> float:
+            mask = np.array([len(t) >= min_len for t in test_types.types])
+            denom = test_types.freqs[mask].sum()
+            return float(
+                test_types.freqs[test_matched & mask].sum() / max(denom, 1)
+            )
+
+        match_rate = _sig_match_rate(3)
+        match_rate_long = _sig_match_rate(5)
+        key_rows = [
+            {"token": tok, "all": ALPHABET[best_key[i]]}
+            for i, tok in enumerate(vocab)
+        ]
+        decoded_ids = None
+    elif hypothesis == "abbreviation":
         train_scorer = ExpansionScorer(train_corpus, lm)
         test_scorer = ExpansionScorer(test_corpus, lm)
         init_key = staged_expansion_init(
@@ -174,17 +289,54 @@ def solve_voynich(
             test_view, lm.logp, n_states, test_corpus.n_tokens,
             n_samples=30, seed=cfg["seed"],
         )
-        result = anneal(
-            train_view,
-            lm.logp,
-            n_states=n_states,
-            n_tokens=train_corpus.n_tokens,
-            iterations=cfg["iterations"],
-            restarts=cfg["restarts"],
-            seed=cfg["seed"],
-            progress=progress,
-            should_stop=should_stop,
-        )
+        train_types = WordTypes(to_ids(train_lines)) if lock_rounds else None
+        locked = None
+        for rnd in range(lock_rounds + 1):
+            result = anneal(
+                train_view,
+                lm.logp,
+                n_states=n_states,
+                n_tokens=train_corpus.n_tokens,
+                iterations=cfg["iterations"],
+                restarts=cfg["restarts"],
+                seed=cfg["seed"],
+                locked_letters=locked,
+                progress=progress,
+                should_stop=should_stop,
+            )
+            if not lock_rounds:
+                break
+            # Crib locking: freeze tokens corroborated by exact dictionary
+            # matches and re-anneal the rest.
+            key_row = result.best_key[0]
+            matched = np.array(
+                [
+                    len(t) >= 3
+                    and "".join(ALPHABET[key_row[x]] for x in t)
+                    in dictionary.word_logp
+                    for t in train_types.types
+                ]
+            )
+            # The space token never occurs inside words, so lock_mask
+            # leaves it free; moves already pin it anyway.
+            lock_mask = evidence_locks(
+                train_types, matched, train_corpus.n_tokens
+            )
+            new_locked = np.where(lock_mask, key_row, -1)
+            locking_log.append(
+                {
+                    "round": rnd,
+                    "locked_tokens": int(lock_mask.sum()),
+                    "train_score": result.best_score,
+                }
+            )
+            if (
+                rnd == lock_rounds
+                or result.stopped_early
+                or (locked is not None and np.array_equal(new_locked, locked))
+            ):
+                break
+            locked = new_locked
         test_score = test_view.score(result.best_key, lm.logp)
         train_score = result.best_score
         decoded_sample = decode_lines(
@@ -192,6 +344,17 @@ def solve_voynich(
         )
         key_rows = key_table(result.best_key, vocab)
         decoded_ids = decode_stream(result.best_key, test_corpus)
+
+    # Dictionary word-match rate on held-out lines: the "is it language
+    # yet?" diagnostic, shared by every hypothesis.
+    if hypothesis != "anagram":
+        if hypothesis == "abbreviation":
+            all_decoded = decode_lines_expanded(result.best_key, test_lines, vocab)
+        else:
+            all_decoded = decode_lines(result.best_key, test_lines, vocab, n_states)
+        decoded_words = [(w, 1) for line in all_decoded for w in line.split()]
+        match_rate = word_match_rate(decoded_words, dictionary)
+        match_rate_long = word_match_rate(decoded_words, dictionary, min_len=5)
 
     floor = float(np.mean(rand_scores))
     gap_closed = (test_score - floor) / (ceiling - floor) if ceiling > floor else 0.0
@@ -201,7 +364,8 @@ def solve_voynich(
         f"{odd_lines[i].folio}.{odd_lines[i].line_number}"
         for i in range(min(25, len(test_lines)))
     ]
-    decoded_text = "".join(ALPHABET[i] for i in decoded_ids)
+    if decoded_ids is not None:
+        decoded_text = "".join(ALPHABET[i] for i in decoded_ids)
 
     report = {
         "meta": {
@@ -220,8 +384,11 @@ def solve_voynich(
             "random_key_std": float(np.std(rand_scores)),
             "reference_ceiling": ceiling,
             "gap_closed": gap_closed,
+            "word_match_rate": match_rate,
+            "word_match_rate_long": match_rate_long,
         },
-        "verdict": _verdict(gap_closed),
+        "locking": locking_log,
+        "verdict": _verdict(gap_closed, match_rate, match_rate_long),
         "history": result.history,
         "key": key_rows,
         "decoded_sample": [
@@ -234,26 +401,47 @@ def solve_voynich(
     return report
 
 
-def _verdict(gap_closed: float) -> str:
+def _verdict(
+    gap_closed: float,
+    match_rate: float | None = None,
+    match_rate_long: float | None = None,
+) -> str:
     pct = gap_closed * 100
+    matches = (
+        f" Dictionary matches on held-out words: {match_rate * 100:.1f}% "
+        f"(len>=3), {match_rate_long * 100:.1f}% (len>=5) — real text scores "
+        "near 100% on both; junk keys hit short words by chance and long "
+        "words almost never."
+        if match_rate is not None and match_rate_long is not None
+        else ""
+    )
+    if gap_closed > 1.0:
+        return (
+            f"Gap closed: {pct:.1f}% — ABOVE the real-language ceiling. With "
+            "word-multiset (anagram) scoring this means the optimizer stuffed "
+            "the text with short, frequent dictionary words; it is gaming the "
+            "objective, not reading the manuscript. Trust the long-word match "
+            "rate instead." + matches
+        )
     if gap_closed >= 0.85:
         return (
             f"Gap closed: {pct:.1f}%. The held-out text scores close to real "
             "reference-language text. If this is reproducible across seeds and "
             "the decoded sample reads as language, treat it as a serious "
             "candidate — and expect to be wrong anyway; check the sample."
+            + matches
         )
     if gap_closed >= 0.5:
         return (
             f"Gap closed: {pct:.1f}%. Substantially better than chance, far "
             "from real language. Typical of a wrong-but-structured hypothesis: "
             "the optimizer exploits Voynichese's rigid word structure without "
-            "producing language."
+            "producing language." + matches
         )
     return (
         f"Gap closed: {pct:.1f}%. The mapping generalizes barely better than "
         "random keys. Under this hypothesis/reference pairing the text does "
-        "not behave like a simple substitution of that language."
+        "not behave like a simple substitution of that language." + matches
     )
 
 
@@ -292,6 +480,7 @@ def sweep_references(
                 "label": report["meta"]["reference_label"],
                 "family": corpus_mod.REFERENCE_SOURCES[ref].family,
                 "gap_closed": s["gap_closed"],
+                "word_match_rate": s["word_match_rate"],
                 "test_heldout": s["test_heldout"],
                 "random_key_floor": s["random_key_floor"],
                 "reference_ceiling": s["reference_ceiling"],

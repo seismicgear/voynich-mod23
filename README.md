@@ -22,11 +22,16 @@ it**, and this one doesn't. What it does is make decipherment hypotheses
 
 1. **A hypothesis is a key family** — a mapping from EVA glyph tokens to
    letters of a target language: one global key (*simple substitution*),
-   three position-dependent keys (*positional*), or expansions of one token
+   three position-dependent keys (*positional*), expansions of one token
    to 1–2 letters (*abbreviation* — the scribal-abbreviation theory, the
-   leading family of explanations for Voynichese's anomalously low entropy).
+   leading family of explanations for Voynichese's anomalously low entropy),
+   or order-free letter bags scored against a dictionary (*anagram* — for
+   the possibility that scribes scrambled letter order within words).
    Any of them can also be scored against consonant skeletons (*abjad* —
    the vowels-unwritten hypothesis behind the best published result).
+   *Crib locking* (`lock_rounds`) automates the codebreaker's bootstrap:
+   tokens corroborated by enough dictionary-matched words are frozen and
+   the rest re-anneal, round after round.
 2. **Candidates are scored honestly** — by the log-probability of the
    decoded text under a smoothed character n-gram model trained on a real
    corpus. The Latin reference is built on Thomas à Kempis' *De Imitatione
@@ -34,15 +39,20 @@ it**, and this one doesn't. What it does is make decipherment hypotheses
    dating; Froissart's *Chroniques* (Middle French) and Leizarraga's Basque
    New Testament anchor other families to the right era where possible.
 3. **The search is validated** — the benchmark mode encrypts held-out
-   reference text with a random substitution (or a synthetic abbreviation
-   cipher) and checks the annealer recovers it: **100% letter accuracy in
-   seconds** for substitution, 75–93% for the harder abbreviation case. So
-   when the same machinery fails on Voynichese, that is evidence about the
-   text, not about the solver.
+   reference text with a random substitution, a synthetic abbreviation
+   cipher, or a shuffled-letters anagram cipher, and checks the annealer
+   recovers it: **100% letter accuracy in seconds** for substitution,
+   75–93% for abbreviation, ~97% word recovery for anagrams. So when the
+   same machinery fails on Voynichese, that is evidence about the text,
+   not about the solver.
 4. **Results are anchored** — every run reports its held-out score between a
    *random-key floor* (chance) and a *reference-language ceiling* (what real
-   text scores), as "gap closed". Training and validation use disjoint
-   alternating lines, so the optimizer cannot simply memorize.
+   text scores), as "gap closed", plus the **dictionary word-match rate** of
+   the decoded held-out text (short and long words separately — long-word
+   matches are the hard currency; short ones come cheap). Training and
+   validation use disjoint alternating lines, so the optimizer cannot
+   simply memorize — and when an optimizer games a loose objective past the
+   ceiling (the anagram mode can), the verdict says so in plain words.
 
 The reproducible finding — consistent with the published literature — is
 that no substitution-family decoding into any of the 16 reference languages
@@ -98,8 +108,9 @@ does any of them actually fit?".
 python -m voynich solve --language A --reference latin --hypothesis simple \
                         --iterations 60000 --restarts 3
 python -m voynich solve --reference latin --hypothesis abbreviation --abjad
+python -m voynich solve --reference latin --hypothesis anagram --lock-rounds 3
 python -m voynich sweep --language A --hypothesis simple        # all 16 languages, ranked
-python -m voynich benchmark --reference latin --mode abbreviation
+python -m voynich benchmark --reference latin --mode anagram
 python -m voynich setup --force
 ```
 
@@ -166,7 +177,26 @@ score between the random-key floor (0%) and the real-language ceiling
 | 15 | Basque      | 69.8%      | `aari da duan cada o da a den` |
 | 16 | English     | 68.9%      | `ssed an ansa esat i an s are` |
 
-Three readings of this table:
+Under the **anagram hypothesis** (letters unordered within words, dictionary
+scoring, 2 crib-locking rounds, 20k × 2), the optimizer *beats the
+real-language ceiling* on every tested language — and that is a finding about
+the objective, not the manuscript:
+
+| Reference  | "Gap closed" | Dict matches ≥3 | Dict matches ≥5 | Sample |
+|------------|-------------:|----------------:|----------------:|--------|
+| Latin      | 108.4%       | 62.0%           | 28.2%           | `eeri? et test sete? a et e est` |
+| Portuguese | 107.8%       | 62.7%           | 22.3%           | `aano? os sdad? aoso? a os o sao` |
+| Italian    | 105.5%       | 54.9%           | 4.5%            | `eeil? la elli iele? e le e nel` |
+| English    | 89.6%        | 60.6%           | 3.0%            | `soon to tuos? noto? i to o not` |
+
+Letter-bag matching is loose enough that Voynichese's short rigid words can
+be mapped onto frequent short dictionary words wholesale. The workbench
+flags any above-ceiling verdict as objective-gaming and reports long-word
+matches separately — real decipherments produce long-word matches; gamed
+objectives mostly don't. (For calibration: on a *genuine* synthetic anagram
+cipher the same solver recovers ~97% of words, long ones included.)
+
+Three readings of the sweep table:
 
 * **No language works.** Nothing crosses 85%, and every sample is
   repetitive non-language. For calibration, the same solver at a smaller

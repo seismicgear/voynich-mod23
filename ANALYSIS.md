@@ -47,8 +47,34 @@ status in this workbench:
 | 3 | **Abjad** — vowels unwritten (Hebrew/Arabic convention; basis of Hauer & Kondrak's 2016 Hebrew result) | removes the most predictable letters | implemented: the `abjad` flag scores against consonant-skeleton corpora |
 | 4 | **Positional/state-dependent alphabets** | mild | implemented (`positional`); extendable to word-position states |
 | 5 | **Nulls + nomenclator** — some glyphs decode to nothing, some tokens are whole-word codes | lowers | designed: allow zero-length expansions (needs a minimum-output guard so the optimizer can't delete the text) plus a code-token dictionary |
-| 6 | **Per-word anagramming** (Hauer & Kondrak's full model) | n-grams uninformative; needs word-level scoring | designed: score words as letter-multisets against a dictionary + word-frequency model instead of char n-grams |
+| 6 | **Per-word anagramming** — letters written in scrambled/canonical order | n-grams uninformative; needs word-level scoring | implemented: the `anagram` hypothesis — words scored as letter multisets against a reference dictionary, with an *alphagram LM* (n-grams over sorted-letter words) supplying the smooth gradient that pure dictionary matching lacks; validated at 97% recovery on synthetic anagram ciphers |
 | 7 | **Unknown language / invented script** | — | partially testable: typological comparison (entropy, word grammar) against diverse families — Uralic and Basque are in the sweep for exactly this reason |
+
+Two further mechanisms automate the grind:
+
+* **Crib locking** (`lock_rounds`): after each solve, tokens corroborated by
+  enough dictionary-matched words (length ≥ 3, ≥ 60% of their occurrences
+  matched, ≥ 20 occurrences of support) are frozen and the rest re-anneal.
+  This is the codebreaker's bootstrap, automated — with thresholds, because
+  locking junk early poisons everything downstream.
+* **Brute force is not an option, and that's a theorem, not a shortcut.**
+  With ~55 tokens and 26 letters the key space exceeds 26^55 ≈ 10^77.
+  "Try every combination" is what the annealer *approximates*: restarts
+  explore basins, Metropolis acceptance escapes local traps, locking
+  preserves what's already won.
+
+### A warning from the anagram experiments: objectives can be gamed
+
+Anagram (multiset) scoring is intrinsically looser than ordered scoring —
+many letter bags collide with *some* dictionary word. On the real
+manuscript the anagram optimizer promptly scored **above the
+real-language ceiling** (gap "closed" >100%) by mapping Voynich's rigid
+short words onto frequent short dictionary words. The workbench now flags
+this verdict explicitly and reports **long-word match rates** (≥5 letters)
+separately, where multiset collisions are rare. The next methodological
+upgrade on this front is a **null control**: run the identical search on a
+token-shuffled pseudo-Voynich and report the score *difference* — only
+signal that survives the control counts.
 
 Combinations matter more than single rungs: the historically attested
 candidate for a 15th-century herbal is **abbreviated Latin** (#2 + #3 +
