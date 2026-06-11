@@ -1,0 +1,142 @@
+name: build-installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: VoynichWorkbench-linux-x86_64
+          - os: windows-latest
+            artifact: VoynichWorkbench-windows-x86_64
+          - os: macos-latest
+            artifact: VoynichWorkbench-macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt pyinstaller
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+      - name: Build executable
+        run: pyinstaller --noconfirm voynich_workbench.spec
+
+      - name: Smoke-test executable (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ./dist/VoynichWorkbench --no-browser --port 5199 &
+          SERVER=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:5199/ >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:5199/ | grep -q "Voynich Decipherment Workbench"
+          kill $SERVER
+
+      - name: Smoke-test executable (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -PassThru -FilePath dist\VoynichWorkbench.exe -ArgumentList "--no-browser","--port","5199"
+          $ok = $false
+          foreach ($i in 1..30) {
+            try {
+              $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5199/
+              if ($r.Content -match "Voynich Decipherment Workbench") { $ok = $true; break }
+            } catch { Start-Sleep 1 }
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) { exit 1 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build desktop app (Electron)
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm install --no-audit --no-fund
+          npx electron-builder --publish never
+
+      - name: Smoke-test desktop app (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb
+          xvfb-run -a ./electron/dist-electron/linux-unpacked/voynich-workbench-desktop \
+            --smoke --no-sandbox
+
+      - name: Smoke-test desktop app (macos)
+        if: runner.os == 'macOS'
+        run: |
+          "./electron/dist-electron/mac-arm64/Voynich Workbench.app/Contents/MacOS/Voynich Workbench" --smoke
+
+      - name: Smoke-test desktop app (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = "electron\dist-electron\win-unpacked\Voynich Workbench.exe"
+          $p = Start-Process -PassThru -Wait -FilePath $exe -ArgumentList "--smoke"
+          if ($p.ExitCode -ne 0) { exit 1 }
+
+      - name: Package (linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p out
+          tar -czf out/${{ matrix.artifact }}.tar.gz -C dist VoynichWorkbench
+          cp "electron/dist-electron/Voynich Workbench-"*.AppImage \
+             out/${{ matrix.artifact }}.AppImage
+
+      - name: Package (macos)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p out
+          cp "electron/dist-electron/Voynich Workbench-"*.dmg \
+             out/${{ matrix.artifact }}.dmg
+          tar -czf out/${{ matrix.artifact }}-cli.tar.gz -C dist VoynichWorkbench
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item "electron\dist-electron\Voynich Workbench Setup *.exe" `
+            out\${{ matrix.artifact }}-Setup.exe
+          Compress-Archive -Path dist\VoynichWorkbench.exe `
+            -DestinationPath out\${{ matrix.artifact }}-cli.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: out/*
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

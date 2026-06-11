@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voynich-workbench"
+version = "3.2.0"
+description = "Voynich Decipherment Workbench — MCMC annealing over substitution-key hypotheses with a browser GUI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE.md" }
+authors = [{ name = "Montgomery Kuykendall" }]
+dependencies = [
+    "numpy>=1.24",
+    "flask>=3.0",
+    "pypinyin>=0.50",
+]
+
+[project.scripts]
+voynich-workbench = "voynich.launcher:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "matplotlib>=3.7"]
+
+[tool.setuptools.packages.find]
+include = ["voynich*"]
+
+[tool.setuptools.package-data]
+"voynich.webapp" = ["templates/*.html", "static/*.css", "static/*.js"]
