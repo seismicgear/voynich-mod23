@@ -35,6 +35,30 @@ def test_short_words_excluded():
     assert rates["exact_rate"] == 0.0
 
 
+def test_model_showdown_detects_copying():
+    from voynich.diagnostics import model_showdown
+
+    # Heavy copy-and-mutate stream: each word repeats/mutates recent ones
+    rng_words = []
+    stems = ["qokeedy", "chedaiin", "sholkar", "otarchy"]
+    for i in range(600):
+        s = stems[i % 4]
+        rng_words.append(s if i % 3 else s[:-1])
+    report = model_showdown(rng_words, window=10)
+    assert report["autocopy_bits_per_word"] >= report["static_bits_per_word"]
+    assert set(report) >= {"rho", "eta", "autocopy_advantage_bits", "bic_penalty_bits"}
+
+
+def test_model_showdown_nested_never_worse():
+    from voynich.diagnostics import model_showdown
+
+    # Arbitrary distinct words: rho should fit near 0 and the advantage
+    # must be >= 0 (the autocopy model nests the static one).
+    words = [f"{i:03d}{i:03d}w" for i in range(400)]
+    report = model_showdown(words, window=10)
+    assert report["autocopy_advantage_bits"] >= -1e-9
+
+
 def test_shuffled_baseline_reduces_locality():
     # Locality lives in ORDER; shuffling must lower the near rate
     clustered = []

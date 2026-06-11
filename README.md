@@ -6,11 +6,33 @@ substitution-key spaces, scored by reference-language n-gram models, with a
 browser GUI, held-out validation, and a built-in solver benchmark on ciphers
 with known answers.
 
+## Install
+
+**Desktop (Linux / Windows / macOS)** — download the build for your OS from
+the repository's GitHub Releases (produced by the `build-installers`
+workflow: a `.tar.gz` binary for Linux, a `.dmg` for macOS, and both a
+portable `.zip` and a `VoynichWorkbench-Setup.exe` installer for Windows).
+Run it; the workbench opens in your browser. Data downloads on first use
+into your user data directory.
+
+**With pip** (any OS with Python 3.10+):
+
+```bash
+pip install .
+voynich-workbench           # launches the GUI in your browser
+```
+
+**From source**:
+
 ```bash
 pip install -r requirements.txt
 python -m voynich setup     # download the transcription + reference corpora
 python -m voynich gui       # open http://127.0.0.1:5000/
 ```
+
+Maintainers: tag a release (`git tag v3.2.0 && git push --tags`) or run the
+`build-installers` workflow manually — it builds, tests and smoke-runs the
+executable on all three OSes and attaches the artifacts.
 
 ---
 
@@ -124,11 +146,23 @@ Beyond the four key families and the abjad flag, every solve accepts:
   token-scrambled pseudo-Voynichese with identical word lengths and line
   structure. Signal that survives the scramble is objective-gaming, not
   manuscript.
+* **Nomenclator hypothesis** (`--hypothesis nomenclator`) — substitution
+  plus a bounded, injective codebook assigning whole plaintext words to
+  frequent Voynich word types, the structure of real quattrocento
+  diplomatic ciphers. Codebook entries pay a description-length cost; the
+  recovered codebook is reported in full. Validated at 73% on synthetic
+  nomenclator ciphers (residual misses are code glyphs whose words can
+  pose as cheap one-letter decodes — a documented objective limitation).
 * **Self-citation diagnostics** (`python -m voynich diagnostics`, or the
   Diagnostics tab) — measures the copy-and-mutate fingerprint of the
   leading non-language theory (Timm & Schinner): how often a content word
   has a near-duplicate among the previous N words, versus shuffled nulls
-  and real languages. No key search; it interrogates the text itself.
+  and real languages. Includes the **model showdown**: a static-lexicon
+  model versus an autocopy generator, fitted on half the word stream and
+  compared on held-out likelihood. With the conservative uniform-mutation
+  kernel, the copy mechanism currently buys ~0.6 bits/word on formulaic
+  KJV English and ~0 on Voynichese — reported as the non-separation it is;
+  a plausibility-weighted mutation kernel is the next upgrade.
 
 ## The GUI
 
@@ -266,6 +300,17 @@ flags any above-ceiling verdict as objective-gaming and reports long-word
 matches separately — real decipherments produce long-word matches; gamed
 objectives mostly don't. (For calibration: on a *genuine* synthetic anagram
 cipher the same solver recovers ~97% of words, long ones included.)
+
+The **nomenclator** hypothesis (substitution + word codebook, 30k × 2,
+seed 42, Currier A vs Latin) is the strongest costume yet: **95.3% gap
+closed**, with a 25-entry codebook assigning frequent Voynich types to
+Latin function words (`aiin→me`, `ar→esse`, `chol→in`, `char→omnia`) —
+and long-word dictionary matches of **1.0%** with unreadable samples
+(`ttis et este ates [et] et [te] eti`). The progression across
+hypotheses — simple 74%, abbreviation 80%, anagram >100%, nomenclator
+95% — is itself the lesson: every added degree of freedom buys statistics,
+none buys language, and the long-word match rate exposes the difference
+every time.
 
 Three readings of the sweep table:
 

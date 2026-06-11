@@ -173,9 +173,11 @@ def _clean_config(kind: str, raw: dict) -> dict:
     if kind == "benchmark":
         cfg["cipher_chars"] = max(500, min(int(raw.get("cipher_chars", 4000)), 50_000))
         mode = str(raw.get("mode", "substitution"))
-        if mode not in ("substitution", "abbreviation", "nulls", "anagram"):
+        if mode not in ("substitution", "abbreviation", "nulls", "anagram",
+                        "nomenclator"):
             raise ValueError(
-                "mode must be substitution, abbreviation, nulls or anagram"
+                "mode must be substitution, abbreviation, nulls, anagram "
+                "or nomenclator"
             )
         cfg["mode"] = mode
     return cfg

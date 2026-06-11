@@ -37,11 +37,13 @@ from .annealer import (
     anneal,
     anneal_anagram,
     anneal_expansion,
+    anneal_nomenclator,
     random_expansion_scores,
     random_key_scores,
 )
 from .words import (
     AnagramScorer,
+    NomenclatorScorer,
     WordDictionary,
     WordTypes,
     alphagram_text,
@@ -64,9 +66,11 @@ from .lm import ALPHABET, CharNgramModel, encode_text
 from .synthetic import staged_expansion_init
 from .tokenizer import EvaTokenizer
 
-RESULTS_DIR = pathlib.Path("results")
+from .paths import default_results_dir
 
-HYPOTHESES = ("simple", "positional", "abbreviation", "anagram")
+RESULTS_DIR = default_results_dir()
+
+HYPOTHESES = ("simple", "positional", "abbreviation", "anagram", "nomenclator")
 LOCKABLE_HYPOTHESES = ("simple", "anagram")
 
 DEFAULT_CONFIG = {
@@ -176,6 +180,7 @@ def solve_voynich(
         )
     if cfg.get("allow_nulls") and hypothesis != "abbreviation":
         raise ValueError("allow_nulls requires the abbreviation hypothesis")
+    code_table: list[dict] = []
     locking_log: list[dict] = []
 
     # 4. Language model + anchors
@@ -273,6 +278,79 @@ def solve_voynich(
             {"token": tok, "all": ALPHABET[best_key[i]]}
             for i, tok in enumerate(vocab)
         ]
+        decoded_ids = None
+    elif hypothesis == "nomenclator":
+        train_types = WordTypes(to_ids(train_lines))
+        test_types = WordTypes(to_ids(test_lines))
+        scorer = NomenclatorScorer(train_types, dictionary, lm)
+        init = staged_expansion_init(
+            train_corpus, lm, order,
+            iterations=min(cfg["iterations"], 15_000), seed=cfg["seed"],
+        )[: len(vocab), 0]
+        result = anneal_nomenclator(
+            scorer,
+            n_tokens=len(vocab),
+            iterations=cfg["iterations"],
+            restarts=cfg["restarts"],
+            seed=cfg["seed"],
+            init_key=init.copy(),
+            progress=progress,
+            should_stop=should_stop,
+        )
+        best_key = result.best_key
+        codebook = scorer.codebook()
+        train_score = result.best_score
+        test_score = scorer.score_key(best_key, codebook, test_types)
+        rng = np.random.default_rng(cfg["seed"])
+        rand_scores = [
+            scorer.score_key(
+                rng.integers(0, 26, size=len(vocab), dtype=np.int64),
+                {},
+                test_types,
+            )
+            for _ in range(30)
+        ]
+        ceiling = dictionary.expected_word_score(ref_text)
+
+        def render_word(word_ids: list[int]) -> str:
+            ci = codebook.get(tuple(word_ids), -1)
+            if ci >= 0:
+                return f"[{scorer.code_words[ci][0]}]"  # codebook word
+            return "".join(ALPHABET[best_key[t]] for t in word_ids)
+
+        test_ids = to_ids(test_lines)
+        decoded_sample = [
+            " ".join(render_word(w) for w in line) for line in test_ids[:25]
+        ]
+        decoded_text = "\n".join(
+            " ".join(render_word(w) for w in line) for line in test_ids
+        )
+        # Match metrics over SPELLED words only — codebook words are real
+        # words by construction and would flatter the rate.
+        spelled_words = [
+            ("".join(ALPHABET[best_key[t]] for t in word_ids), 1)
+            for line in test_ids
+            for word_ids in line
+            if tuple(word_ids) not in codebook
+        ]
+        match_rate = word_match_rate(spelled_words, dictionary)
+        match_rate_long = word_match_rate(spelled_words, dictionary, min_len=5)
+        key_rows = [
+            {"token": tok, "all": ALPHABET[best_key[i]]}
+            for i, tok in enumerate(vocab)
+        ]
+        # Expose the codebook itself — the most interesting artifact.
+        id_to_tok = {i: t for i, t in enumerate(vocab)}
+        code_table = sorted(
+            (
+                {
+                    "voynich_word": "".join(id_to_tok[t] for t in tup),
+                    "plaintext_word": scorer.code_words[ci][0],
+                }
+                for tup, ci in codebook.items()
+            ),
+            key=lambda r: r["voynich_word"],
+        )
         decoded_ids = None
     elif hypothesis == "abbreviation":
         allow_nulls = bool(cfg.get("allow_nulls", False))
@@ -374,8 +452,9 @@ def solve_voynich(
         decoded_ids = decode_stream(result.best_key, test_corpus)
 
     # Dictionary word-match rate on held-out lines: the "is it language
-    # yet?" diagnostic, shared by every hypothesis.
-    if hypothesis != "anagram":
+    # yet?" diagnostic, shared by every hypothesis.  The anagram and
+    # nomenclator branches compute their own rates above.
+    if hypothesis not in ("anagram", "nomenclator"):
         if hypothesis == "abbreviation":
             all_decoded = decode_lines_expanded(result.best_key, test_lines, vocab)
         else:
@@ -416,6 +495,7 @@ def solve_voynich(
             "word_match_rate_long": match_rate_long,
         },
         "locking": locking_log,
+        "code_table": code_table,
         "verdict": _verdict(gap_closed, match_rate, match_rate_long),
         "history": result.history,
         "key": key_rows,

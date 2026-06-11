@@ -30,7 +30,9 @@ import unicodedata
 import urllib.request
 from dataclasses import dataclass
 
-DATA_DIR = pathlib.Path(os.environ.get("VOYNICH_DATA_DIR", "data"))
+from .paths import default_data_dir
+
+DATA_DIR = default_data_dir()
 
 VOYNICH_URL = (
     "https://raw.githubusercontent.com/chirila/Voynich-public/master/"

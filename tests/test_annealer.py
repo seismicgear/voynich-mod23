@@ -72,6 +72,25 @@ def test_solver_recovers_null_cipher(english_text):
     assert report["best_score"] > report["random_key_score_mean"] + 2.0
 
 
+def test_solver_recovers_nomenclator_cipher(english_text):
+    """Substitution plus a codebook of word-codes for frequent words.
+    Partial recovery is expected — code glyphs whose words can pose as
+    cheap one-letter decodes are a known objective limitation — but the
+    bulk of the text and codebook must come back."""
+    report = run_benchmark(
+        english_text,
+        order=4,
+        cipher_chars=3500,
+        iterations=20000,
+        restarts=2,
+        seed=2,
+        mode="nomenclator",
+    )
+    assert report["accuracy"] >= 0.55
+    assert report["n_codes_found"] >= 5
+    assert report["best_score"] > report["random_key_score_mean"] + 5.0
+
+
 def test_stop_flag_aborts_early(english_text):
     calls = {"n": 0}
 

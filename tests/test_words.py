@@ -88,6 +88,62 @@ def test_frequency_init_key_aligns_ranks():
     assert key[0] == ord("e") - 97
 
 
+def test_nomenclator_scorer_incremental_and_injective(english_text):
+    from voynich.words import NomenclatorScorer
+
+    lines = [[_ids("the"), _ids("god")], [_ids("earth"), _ids("the")]]
+    wt = WordTypes(lines)
+    d = WordDictionary(english_text)
+    lm = CharNgramModel(order=3).fit(english_text)
+    scorer = NomenclatorScorer(wt, d, lm, n_code_slots=3, n_code_words=50)
+
+    key = np.arange(26, dtype=np.int64)
+    base = scorer.reset(key)
+
+    # Assign a code; objective must match the stateless evaluation.
+    ti = int(scorer.eligible[0])
+    undo = scorer.update_code(ti, 5)
+    assert undo is not None
+    stateless = scorer.score_key(key, scorer.codebook())
+    assert scorer.objective() == pytest.approx(stateless)
+
+    # Injectivity: the same code word cannot serve a second type.
+    other = int(scorer.eligible[1])
+    assert scorer.update_code(other, 5) is None
+
+    # Reverting restores the baseline exactly.
+    scorer.revert(undo)
+    assert scorer.objective() == pytest.approx(base)
+
+    # Token changes only affect spelled types.
+    undo2 = scorer.update_code(ti, 7)
+    before = scorer.objective()
+    undo_tok = scorer.update_tokens(key, [int(wt.types[ti][0])])
+    # key unchanged => spell scores unchanged => objective unchanged
+    assert scorer.objective() == pytest.approx(before)
+    scorer.revert(undo_tok)
+    scorer.revert(undo2)
+
+
+def test_nomenclator_code_cost_charged(english_text):
+    from voynich.words import NomenclatorScorer
+
+    lines = [[_ids("the")]] * 3
+    wt = WordTypes(lines)
+    d = WordDictionary(english_text)
+    lm = CharNgramModel(order=3).fit(english_text)
+    free = NomenclatorScorer(wt, d, lm, code_entry_cost_bits=0.0)
+    costly = NomenclatorScorer(wt, d, lm, code_entry_cost_bits=30.0)
+    key = np.arange(26, dtype=np.int64)
+    free.reset(key)
+    costly.reset(key)
+    free.update_code(0, 0)
+    costly.update_code(0, 0)
+    assert free.objective() - costly.objective() == pytest.approx(
+        30.0 / wt.n_word_tokens
+    )
+
+
 def test_evidence_locks_thresholds():
     # token 0 occurs in matched long words 30 times; token 1 unmatched
     lines = [[[0, 1, 2]] * 30 + [[1, 1, 2]] * 30]

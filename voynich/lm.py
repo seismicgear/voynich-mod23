@@ -122,3 +122,23 @@ class CharNgramModel:
 
     def score_text(self, text: str) -> float:
         return self.score_ids(encode_text(text))
+
+    def word_score(self, ids) -> float:
+        """log2 probability of a single word (sequence of letter ids)
+        plus its closing space, evaluated with space context at the word
+        start.  Summing the emission of the word AND the boundary makes
+        this a proper (sub-)distribution over words, usable as the
+        spell-out / out-of-vocabulary model in word-level objectives."""
+        if self.logp is None:
+            raise RuntimeError("model is not fitted")
+        mod = A ** (self.order - 1)
+        ctx = 0
+        for _ in range(self.order - 1):
+            ctx = ctx * A + SPACE_ID
+        total = 0.0
+        for c in ids:
+            c = int(c)
+            total += self.logp[ctx * A + c]
+            ctx = (ctx * A + c) % mod
+        total += self.logp[ctx * A + SPACE_ID]
+        return float(total)

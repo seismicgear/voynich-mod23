@@ -217,6 +217,178 @@ class AnagramScorer:
         return matched, words
 
 
+class NomenclatorScorer:
+    """Objective for the nomenclator hypothesis: most words decode by
+    letter substitution, but a bounded codebook may assign whole
+    plaintext words to frequent Voynich word types — the structure of
+    real quattrocento diplomatic ciphers (Tranchedino's ledger).
+
+    Score per word token: a coded type earns its assigned word's
+    log-frequency; a spelled type earns the char-LM probability of its
+    decoded letters (as a word, boundaries included).  Each active
+    codebook entry pays a one-time description-length cost, so codes are
+    only worth assigning where they genuinely explain the text."""
+
+    def __init__(
+        self,
+        word_types: WordTypes,
+        dictionary: WordDictionary,
+        lm,
+        n_code_slots: int = 50,
+        n_code_words: int = 2000,
+        code_entry_cost_bits: float = 20.0,
+    ):
+        self.wt = word_types
+        self.dict = dictionary
+        self.lm = lm
+        self.code_entry_cost = code_entry_cost_bits
+
+        order = np.argsort(-word_types.freqs)
+        self.eligible = order[: min(n_code_slots, len(order))]
+        self.eligible_set = set(int(i) for i in self.eligible)
+
+        ranked = sorted(
+            dictionary.word_logp.items(), key=lambda kv: kv[1], reverse=True
+        )[:n_code_words]
+        self.code_words = ranked          # list of (word, logp)
+        self.n_code_words = len(ranked)
+
+        n_types = len(word_types.types)
+        self.codes = np.full(n_types, -1, dtype=np.int64)  # index into code_words
+        # Injectivity: each code word may serve at most one type — without
+        # this the objective assigns the single most frequent word to
+        # every slot.  Word-level frequency analysis falls out of it.
+        self._code_owner: dict[int, int] = {}
+        self._spell_scores: np.ndarray | None = None
+        self._weighted = 0.0
+
+    # ---- scoring ----------------------------------------------------------
+
+    def _spell_score(self, key: np.ndarray, ti: int) -> float:
+        return self.lm.word_score(key[self.wt.types[ti]])
+
+    def _type_score(self, ti: int) -> float:
+        ci = self.codes[ti]
+        if ci >= 0:
+            return self.code_words[ci][1]
+        return self._spell_scores[ti]
+
+    def reset(self, key: np.ndarray) -> float:
+        self._spell_scores = np.array(
+            [self._spell_score(key, i) for i in range(len(self.wt.types))]
+        )
+        self._code_owner = {
+            int(c): int(ti) for ti, c in enumerate(self.codes) if c >= 0
+        }
+        self._recompute_weighted()
+        return self.objective()
+
+    def _recompute_weighted(self) -> None:
+        scores = np.where(
+            self.codes >= 0,
+            np.array([
+                self.code_words[c][1] if c >= 0 else 0.0 for c in self.codes
+            ]),
+            self._spell_scores,
+        )
+        self._weighted = float(scores @ self.wt.freqs)
+
+    def objective(self) -> float:
+        cost = self.code_entry_cost * int((self.codes >= 0).sum())
+        return (self._weighted - cost) / self.wt.n_word_tokens
+
+    # ---- incremental updates ----------------------------------------------
+
+    def update_tokens(self, key: np.ndarray, changed_tokens: list[int]):
+        """Substitution change: rescore spelled types containing the
+        tokens (coded types are unaffected by the letter key)."""
+        parts = [
+            self.wt.postings[t] for t in changed_tokens if t in self.wt.postings
+        ]
+        if not parts:
+            return None
+        affected = np.unique(np.concatenate(parts))
+        old = self._spell_scores[affected].copy()
+        delta = 0.0
+        for ti in affected:
+            new = self._spell_score(key, int(ti))
+            if self.codes[ti] < 0:
+                delta += (new - self._spell_scores[ti]) * self.wt.freqs[ti]
+            self._spell_scores[ti] = new
+        self._weighted += delta
+        return ("tokens", affected, old, delta)
+
+    def update_code(self, ti: int, new_code: int):
+        """Codebook change for type ti: new_code = -1 clears the entry.
+        Returns None (a no-op) if the code word already serves another
+        type — the codebook is injective."""
+        if new_code >= 0 and self._code_owner.get(new_code, ti) != ti:
+            return None
+        old_code = int(self.codes[ti])
+        old_score = self._type_score(ti)
+        self.codes[ti] = new_code
+        if old_code >= 0:
+            self._code_owner.pop(old_code, None)
+        if new_code >= 0:
+            self._code_owner[new_code] = ti
+        delta = (self._type_score(ti) - old_score) * self.wt.freqs[ti]
+        self._weighted += delta
+        return ("code", ti, old_code, delta)
+
+    def revert(self, undo) -> None:
+        if undo is None:
+            return
+        if undo[0] == "tokens":
+            _, affected, old, delta = undo
+            self._spell_scores[affected] = old
+            self._weighted -= delta
+        else:
+            _, ti, old_code, delta = undo
+            current = int(self.codes[ti])
+            if current >= 0:
+                self._code_owner.pop(current, None)
+            if old_code >= 0:
+                self._code_owner[old_code] = ti
+            self.codes[ti] = old_code
+            self._weighted -= delta
+
+    # ---- stateless evaluation & reporting ----------------------------------
+
+    def score_key(
+        self,
+        key: np.ndarray,
+        codebook: dict[tuple, int] | None = None,
+        word_types: WordTypes | None = None,
+    ) -> float:
+        """Evaluate a (key, codebook) pair on arbitrary word types —
+        used for held-out scoring.  The codebook maps word-type token
+        tuples to code-word indices."""
+        wt = word_types or self.wt
+        codebook = codebook or {}
+        total = 0.0
+        n_codes = 0
+        seen_codes = set()
+        for i, t in enumerate(wt.types):
+            tup = tuple(int(x) for x in t)
+            ci = codebook.get(tup, -1)
+            if ci >= 0:
+                total += self.code_words[ci][1] * wt.freqs[i]
+                if tup not in seen_codes:
+                    seen_codes.add(tup)
+                    n_codes += 1
+            else:
+                total += self.lm.word_score(key[t]) * wt.freqs[i]
+        total -= self.code_entry_cost * n_codes
+        return total / wt.n_word_tokens
+
+    def codebook(self) -> dict[tuple, int]:
+        return {
+            tuple(int(x) for x in self.wt.types[ti]): int(self.codes[ti])
+            for ti in range(len(self.wt.types))
+            if self.codes[ti] >= 0
+        }
+
+
 def frequency_init_key(
     word_types: WordTypes,
     dictionary: WordDictionary,

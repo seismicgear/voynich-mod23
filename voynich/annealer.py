@@ -465,6 +465,184 @@ def anneal_anagram(
     )
 
 
+def anneal_nomenclator(
+    scorer,
+    n_tokens: int,
+    iterations: int = 30_000,
+    restarts: int = 2,
+    t_start: float = 0.15,
+    t_end: float = 0.002,
+    seed: int | None = None,
+    init_key: np.ndarray | None = None,
+    progress: Callable[[dict], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    progress_every: int = 500,
+) -> AnnealResult:
+    """Joint simulated annealing over a substitution key AND a bounded
+    codebook (the nomenclator hypothesis).  Moves mix letter changes,
+    letter swaps, and codebook assignment / reassignment / clearing on
+    the scorer's eligible (frequent) word types.
+
+    Returns the best key; the matching codebook is left in the scorer
+    (read it with scorer.codebook() after the call — it is restored to
+    the best state before returning)."""
+    rng = np.random.default_rng(seed)
+    t0 = time.time()
+
+    global_best_key: np.ndarray | None = None
+    global_best_codes: np.ndarray | None = None
+    global_best_score = -math.inf
+    history: list[tuple[int, float]] = []
+    iters_done = 0
+    restarts_done = 0
+    stopped = False
+
+    eligible = scorer.eligible
+    cooling = (t_end / t_start) ** (1.0 / max(iterations - 1, 1))
+
+    for restart in range(restarts):
+        if restart == 0 and init_key is not None:
+            key = init_key.copy()
+        else:
+            key = rng.integers(0, A - 1, size=n_tokens, dtype=np.int64)
+        scorer.codes[:] = -1
+        score = scorer.reset(key)
+        best_key = key.copy()
+        best_codes = scorer.codes.copy()
+        best_score = score
+        temp = t_start
+
+        for it in range(iterations):
+            r = rng.random()
+            undo_key = None
+            if r < 0.30:
+                tok = int(rng.integers(0, n_tokens))
+                old = int(key[tok])
+                new = int(rng.integers(0, A - 2))
+                if new >= old:
+                    new += 1
+                key[tok] = new
+                undo_scorer = scorer.update_tokens(key, [tok])
+                undo_key = ("set", tok, old)
+            elif r < 0.50:
+                a, b = (int(x) for x in rng.choice(n_tokens, size=2, replace=False))
+                key[a], key[b] = key[b], key[a]
+                undo_scorer = scorer.update_tokens(key, [a, b])
+                undo_key = ("swap", a, b)
+            elif r < 0.85:
+                ti = int(eligible[rng.integers(0, len(eligible))])
+                ci = int(rng.integers(0, scorer.n_code_words))
+                undo_scorer = scorer.update_code(ti, ci)
+            else:
+                coded = [int(t) for t in eligible if scorer.codes[t] >= 0]
+                if coded:
+                    ti = coded[int(rng.integers(0, len(coded)))]
+                    undo_scorer = scorer.update_code(ti, -1)
+                else:
+                    ti = int(eligible[rng.integers(0, len(eligible))])
+                    ci = int(rng.integers(0, scorer.n_code_words))
+                    undo_scorer = scorer.update_code(ti, ci)
+
+            new_score = scorer.objective()
+            delta = new_score - score
+            if delta >= 0 or rng.random() < math.exp(delta / temp):
+                score = new_score
+                if score > best_score:
+                    best_score = score
+                    best_key = key.copy()
+                    best_codes = scorer.codes.copy()
+            else:
+                scorer.revert(undo_scorer)
+                if undo_key is not None:
+                    if undo_key[0] == "swap":
+                        _, a, b = undo_key
+                        key[a], key[b] = key[b], key[a]
+                    else:
+                        _, tok, old = undo_key
+                        key[tok] = old
+
+            temp *= cooling
+            iters_done += 1
+
+            if (it + 1) % progress_every == 0 or it == iterations - 1:
+                history.append((restart * iterations + it + 1, best_score))
+                if progress is not None:
+                    progress(
+                        {
+                            "restart": restart,
+                            "restarts": restarts,
+                            "iteration": it + 1,
+                            "total_iterations": iterations,
+                            "temperature": temp,
+                            "score": score,
+                            "best_score": max(best_score, global_best_score),
+                        }
+                    )
+                if should_stop is not None and should_stop():
+                    stopped = True
+                    break
+
+        if best_score > global_best_score:
+            global_best_score = best_score
+            global_best_key = best_key
+            global_best_codes = best_codes
+        restarts_done = restart + 1
+        if stopped:
+            break
+
+    # Restore the scorer to the best state so codebook() reads correctly.
+    if global_best_key is not None:
+        scorer.codes[:] = global_best_codes
+        scorer.reset(global_best_key)
+        if not stopped:
+            # The codebook dimension is too sparse for random moves to
+            # cover (slots x code-words combinations); finish it
+            # exhaustively — each candidate is an O(1) incremental update.
+            global_best_score = polish_codes(scorer, should_stop=should_stop)
+            global_best_codes = scorer.codes.copy()
+            history.append((restarts_done * iterations, global_best_score))
+
+    return AnnealResult(
+        best_key=global_best_key,
+        best_score=global_best_score,
+        history=history,
+        iterations_done=iters_done,
+        restarts_done=restarts_done,
+        stopped_early=stopped,
+        elapsed_sec=time.time() - t0,
+    )
+
+
+def polish_codes(
+    scorer,
+    max_passes: int = 3,
+    should_stop: Callable[[], bool] | None = None,
+) -> float:
+    """Greedy coordinate descent over the codebook: every eligible word
+    type tries spell-out and every code word, keeping the best.  Mutates
+    the scorer's code state in place; returns the final objective."""
+    best = scorer.objective()
+    for _ in range(max_passes):
+        improved = False
+        for ti in scorer.eligible:
+            if should_stop is not None and should_stop():
+                return best
+            ti = int(ti)
+            best_ci = int(scorer.codes[ti])
+            for ci in [-1] + list(range(scorer.n_code_words)):
+                if ci == best_ci:
+                    continue
+                undo = scorer.update_code(ti, ci)
+                s = scorer.objective()
+                if s > best:
+                    best, best_ci, improved = s, ci, True
+                else:
+                    scorer.revert(undo)
+        if not improved:
+            break
+    return best
+
+
 def polish_anagram(
     scorer,
     key: np.ndarray,

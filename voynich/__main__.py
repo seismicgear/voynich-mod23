@@ -81,6 +81,11 @@ def cmd_solve(args) -> int:
     for entry in report.get("locking", []):
         print(f"  lock round {entry['round'] + 1}: {entry['locked_tokens']} tokens frozen")
     print(f"\n{report['verdict']}\n")
+    if report.get("code_table"):
+        print(f"Recovered codebook ({len(report['code_table'])} entries):")
+        for row in report["code_table"][:15]:
+            print(f"  {row['voynich_word']:>14} -> {row['plaintext_word']}")
+        print()
     print("Decoded held-out sample:")
     for row in report["decoded_sample"][:10]:
         print(f"  {row['ref']:>10}  {row['text']}")
@@ -147,6 +152,13 @@ def cmd_diagnostics(args) -> int:
               f"{row['shuffled_near_rate'] * 100:8.1f}% "
               f"{row['locality_excess'] * 100:6.1f}p")
     print(f"\n{report['verdict']}")
+    if report.get("showdown"):
+        print(f"\n{'corpus':38s} {'static':>9s} {'autocopy':>9s} {'advantage':>10s} {'rho':>5s}")
+        for row in report["showdown"]:
+            print(f"{row['corpus'][:38]:38s} {row['static_bits_per_word']:9.3f} "
+                  f"{row['autocopy_bits_per_word']:9.3f} "
+                  f"{row['autocopy_advantage_bits']:10.3f} {row['rho']:5.2f}")
+        print(f"\n{report['showdown_verdict']}")
     print(f"\nFull report: {path}")
     return 0
 
@@ -245,7 +257,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("benchmark", help="validate solver on a known cipher")
     p.add_argument("--reference", default="english", choices=references)
     p.add_argument("--mode", default="substitution",
-                   choices=["substitution", "abbreviation", "nulls", "anagram"])
+                   choices=["substitution", "abbreviation", "nulls", "anagram",
+                            "nomenclator"])
     p.add_argument("--cipher-chars", type=int, default=4000)
     p.add_argument("--order", type=int, default=4, choices=[3, 4])
     p.add_argument("--iterations", type=int, default=20000)

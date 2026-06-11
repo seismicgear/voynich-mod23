@@ -238,6 +238,21 @@ function renderResult(r) {
   if (!res) { el.innerHTML = ""; return; }
 
   if (r.kind === "diagnostics") {
+    const showdown = res.showdown
+      ? `<h3>Model showdown: static lexicon vs copy-and-mutate (held-out)</h3>
+         <div class="verdict">${escapeHtml(res.showdown_verdict || "")}</div>
+         <table><tr><th>corpus</th><th>static bits/word</th><th>autocopy bits/word</th>
+         <th>advantage</th><th>fitted &rho;</th></tr>${res.showdown
+           .map(
+             (row) =>
+               `<tr><td>${escapeHtml(row.corpus)}</td>
+                <td class="num">${row.static_bits_per_word.toFixed(3)}</td>
+                <td class="num">${row.autocopy_bits_per_word.toFixed(3)}</td>
+                <td class="num"><b>${row.autocopy_advantage_bits.toFixed(3)}</b></td>
+                <td class="num">${row.rho.toFixed(2)}</td></tr>`
+           )
+           .join("")}</table>`
+      : "";
     el.innerHTML =
       `<div class="verdict">${escapeHtml(res.verdict)}</div>` +
       `<table><tr><th>corpus</th><th>words</th><th>near-dup rate (&le;1 edit)</th>
@@ -252,6 +267,7 @@ function renderResult(r) {
               <td class="num"><b>${(row.locality_excess * 100).toFixed(1)} pts</b></td></tr>`
          )
          .join("")}</table>` +
+      showdown +
       (res.saved_to ? `<p class="hint">Saved to ${escapeHtml(res.saved_to)}</p>` : "");
     return;
   }
@@ -320,6 +336,15 @@ function renderResult(r) {
     ]) +
     lockNote +
     `<div class="verdict">${escapeHtml(res.verdict)}</div>` +
+    ((res.code_table || []).length
+      ? `<h3>Recovered codebook (${res.code_table.length} entries)</h3>
+         <div class="keygrid">${res.code_table
+           .map(
+             (row) =>
+               `<div class="keycell">${escapeHtml(row.voynich_word)} &rarr; <b>${escapeHtml(row.plaintext_word)}</b></div>`
+           )
+           .join("")}</div>`
+      : "") +
     `<h3>Decoded held-out sample</h3>
      <table><tr><th>folio.line</th><th>decoded</th></tr>${(res.decoded_sample || [])
        .map((d) => `<tr><td class="mono">${escapeHtml(d.ref)}</td><td class="mono">${escapeHtml(d.text)}</td></tr>`)

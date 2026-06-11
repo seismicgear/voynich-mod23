@@ -21,11 +21,13 @@ from .annealer import (
     anneal,
     anneal_anagram,
     anneal_expansion,
+    anneal_nomenclator,
     random_expansion_scores,
     random_key_scores,
 )
 from .words import (
     AnagramScorer,
+    NomenclatorScorer,
     WordDictionary,
     WordTypes,
     alphagram_text,
@@ -320,6 +322,128 @@ def make_null_cipher(
     return corpus, true_key, plain_ids
 
 
+def make_nomenclator_cipher(
+    plaintext: str, n_codes: int = 30, seed: int | None = None
+) -> tuple[list[list[list[str]]], list[str], np.ndarray, dict, list[tuple[tuple, str]]]:
+    """Encrypt plaintext like a quattrocento chancery: frequent words get
+    dedicated code glyphs, everything else is enciphered letter by
+    letter.
+
+    Returns (lines, vocab, true_subst_key, true_codebook, occurrences)
+    where occurrences pairs each word's ciphertext token tuple with the
+    original plaintext word."""
+    rng = np.random.default_rng(seed)
+    words = [w for w in plaintext.split() if w]
+
+    counts = collections.Counter(w for w in words if len(w) >= 3)
+    coded_words = [w for w, _ in counts.most_common(n_codes)]
+    letters = sorted({ch for w in words for ch in w})
+
+    n_glyphs = len(letters) + len(coded_words)
+    perm = rng.permutation(n_glyphs)
+    vocab = [f"g{j:02d}" for j in range(n_glyphs)]
+    letter_to_token = {letters[i]: int(perm[i]) for i in range(len(letters))}
+    code_token = {
+        w: int(perm[len(letters) + i]) for i, w in enumerate(coded_words)
+    }
+
+    lines: list[list[list[str]]] = []
+    occurrences: list[tuple[tuple, str]] = []
+    for i in range(0, len(words), 8):
+        line = []
+        for w in words[i : i + 8]:
+            if w in code_token:
+                toks = [code_token[w]]
+            else:
+                toks = [letter_to_token[ch] for ch in w]
+            line.append([vocab[t] for t in toks])
+            occurrences.append((tuple(toks), w))
+        if line:
+            lines.append(line)
+
+    true_key = np.zeros(len(vocab), dtype=np.int64)
+    for ch, tok in letter_to_token.items():
+        true_key[tok] = ord(ch) - 97
+    true_codebook = {(tok,): w for w, tok in code_token.items()}
+    return lines, vocab, true_key, true_codebook, occurrences
+
+
+def _run_nomenclator_benchmark(
+    lm_text, sample, order, iterations, restarts, seed, progress, should_stop
+) -> dict:
+    lines, vocab, true_key, true_codebook, occurrences = make_nomenclator_cipher(
+        sample, seed=seed
+    )
+    tok_to_id = {t: i for i, t in enumerate(vocab)}
+    id_lines = [[[tok_to_id[t] for t in w] for w in line] for line in lines]
+
+    dictionary = WordDictionary(lm_text)
+    lm = CharNgramModel(order=order).fit(lm_text)
+    word_types = WordTypes(id_lines)
+    scorer = NomenclatorScorer(word_types, dictionary, lm)
+
+    corpus = encode_corpus(lines, vocab, n_states=1)
+    init = staged_expansion_init(
+        corpus, lm, order, iterations=min(iterations, 15_000), seed=seed
+    )[: len(vocab), 0]
+
+    result = anneal_nomenclator(
+        scorer,
+        n_tokens=len(vocab),
+        iterations=iterations,
+        restarts=restarts,
+        seed=seed,
+        init_key=init.copy(),
+        progress=progress,
+        should_stop=should_stop,
+    )
+
+    codebook = scorer.codebook()
+    key = result.best_key
+
+    def decode_type(toks: tuple) -> str:
+        ci = codebook.get(toks, -1)
+        if ci >= 0:
+            return scorer.code_words[ci][0]
+        return "".join(ALPHABET[key[t]] for t in toks)
+
+    hits = sum(decode_type(toks) == w for toks, w in occurrences)
+    accuracy = hits / max(len(occurrences), 1)
+
+    rng = np.random.default_rng(seed)
+    rand_scores = [
+        scorer.score_key(rng.integers(0, 26, size=len(vocab), dtype=np.int64))
+        for _ in range(20)
+    ]
+    preview = " ".join(decode_type(t) for t, _ in occurrences[:50])[:300]
+    truth = " ".join(w for _, w in occurrences[:50])[:300]
+
+    return {
+        "mode": "nomenclator",
+        "accuracy": accuracy,
+        "best_score": result.best_score,
+        "true_key_score": scorer.score_key(
+            true_key,
+            codebook={
+                toks: next(
+                    (i for i, (cw, _) in enumerate(scorer.code_words) if cw == w),
+                    -1,
+                )
+                for toks, w in true_codebook.items()
+            },
+        ),
+        "random_key_score_mean": float(np.mean(rand_scores)),
+        "n_codes_found": len(codebook),
+        "iterations_done": result.iterations_done,
+        "restarts_done": result.restarts_done,
+        "elapsed_sec": result.elapsed_sec,
+        "history": result.history,
+        "decoded_preview": preview,
+        "plaintext_preview": truth,
+        "cipher_letters": sum(len(t) for t, _ in occurrences),
+    }
+
+
 def _split_for_benchmark(text: str, cipher_chars: int) -> tuple[str, str]:
     cut = max(len(text) - cipher_chars - 1, len(text) // 2)
     lm_text = text[:cut]
@@ -354,6 +478,11 @@ def run_benchmark(
     if mode == "anagram":
         return _run_anagram_benchmark(
             lm_text, sample, iterations, restarts, seed, progress, should_stop
+        )
+    if mode == "nomenclator":
+        return _run_nomenclator_benchmark(
+            lm_text, sample, order, iterations, restarts, seed,
+            progress, should_stop,
         )
     lm = CharNgramModel(order=order).fit(lm_text)
 
